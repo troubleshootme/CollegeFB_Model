@@ -1,1 +1,83 @@
+import cfbd
+from cfbd.rest import ApiException
+import pandas as pd
+from collections import defaultdict
+configuration = cfbd.Configuration()
+configuration.api_key['Authorization'] = api_key
+configuration.api_key_prefix['Authorization']='Bearer'
+api_instance = cfbd.GamesApi(cfbd.ApiClient(configuration))
 
+def extract_team_data(game):
+    """
+    Extracts team statistics from a list of game data and converts it into a DataFrame.
+    
+    This function processes each game in the provided list, extracts information about each team,
+    including their IDs, names, home/away status, points scored, and other statistical categories.
+    The resulting data is then normalized into a DataFrame for easier analysis.
+    
+    :param game_data: List of game objects, where each game object contains details about the game
+                      and its participating teams.
+    :return: DataFrame containing extracted team statistics for each game.
+    """
+    game_stats=[] # Initialize a list to store statistics for each team
+    for game in game_data:
+        game_id=i.id # Extract the unique identifier for the game
+        teams=game.teams # Get the list of teams involved in the game
+        
+        # Iterate through each team in the game
+        for team in teams:
+            team_id = team.school_id # Extract the unique identifier for the team
+            team_name = team.school # Extract the name of the team
+            home_away = team.home_away # Determine if the team is playing at home or away
+        
+            team_stats = {
+                'game_id': game_id,
+                'team_id': team_id,
+                'team_name': team_name,
+                'home_away': home_away,
+                'points': team.points # Extract the points scored by the team
+            }
+            # Add stats to the dictionary
+            for stat in team.stats:
+                category = stat.category
+                value = stat.stat
+                team_stats[category] = value
+            # Append the team's stats to the list of game statistics
+            game_stats.append(team_stats)
+    # Convert the list of dictionaries into a DataFrame
+    return pd.json_normalize(game_stats)
+
+def get_season_team_stats(year):
+    """
+    Retrieve game data for all weeks of a specified year and process it using `extract_team_data`.
+    
+    :param api_instance: The API client instance.
+    :param year: The year for which to retrieve the game data.
+    :return: A dictionary where keys are week numbers and values are lists of extracted team data.
+    """
+    all_weeks_data_df = pd.DataFrame()  # Initialize an empty DataFrame to hold all weeks' data
+    
+    for week in range(1, 16):  # Adjust the range based on the number of weeks in the season
+        try:
+            # Fetch game data for the current week
+            game_data_df = api_instance.get_team_game_stats(year=year, week=week)
+            
+            # Extract relevant team data using the UDF
+            extracted_df = pd.json_normalize(extract_team_data(game_data_df))
+            
+            # Add a column for the week number
+            extracted_df['week'] = week
+            
+            # Concatenate the weekly data into the final DataFrame
+            all_weeks_data_df = pd.concat([all_weeks_data_df, extracted_df], ignore_index=True)
+        
+        except Exception as e:
+            print(f"Error retrieving or processing data for year {year}, week {week}: {e}")
+    
+    return all_weeks_data_df
+
+# yr2023data=get_season_team_stats(year=2023)
+# con=sqlite3.connect('collegeFootball.db')
+# cursor_obj= con.cursor()
+# cursor_obj.execute("DROP TABLE IF EXISTS teamStats23")
+# teamStat2023.to_sql(name='teamStats23',con=con)
