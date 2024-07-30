@@ -1,7 +1,7 @@
-import cfbd
-from cfbd.rest import ApiException
-import pandas as pd
-from collections import defaultdict
+# import cfbd
+# from cfbd.rest import ApiException
+# import pandas as pd
+# from collections import defaultdict
 configuration = cfbd.Configuration()
 configuration.api_key['Authorization'] = api_key
 configuration.api_key_prefix['Authorization']='Bearer'
@@ -45,7 +45,7 @@ def extract_team_data(game):
             # Append the team's stats to the list of game statistics
             game_stats.append(team_stats)
     # Convert the list of dictionaries into a DataFrame
-    return pd.json_normalize(game_stats)
+    return game_stats
 
 def get_season_team_stats(year):
     """
