@@ -9,7 +9,7 @@ College Football database currently contains 8 tables
 ### Games21
 ### Games22
 ### Games23
-### Games 24 is still needed
+## Games 24 is still needed
 
 Columns: index|id|home_team|away_team|away_points|home_points
 
