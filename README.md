@@ -1,5 +1,5 @@
-# CollegeFB_Model
-College Football Prediction
+# College Football Prediction Model
+
 
 
 College Football database currently contains 8 tables
