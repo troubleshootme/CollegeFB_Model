@@ -16,7 +16,7 @@ Columns: index|game_id|team_id|team_name|home_away|conference|points|rushingTDs|
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### fbsTeams
-
+id column is team_id in other tables
 Columns: index|id|school|conference|division|elevation|capacity|latitude|longitude|grass|dome
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
