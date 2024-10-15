@@ -15,8 +15,6 @@ General ideas:
 
 Talk to friend about automating periodic update scripts regularly through the terminal
 
-test predictions on a going-forward basis
-
 ARIMA model to find optimal number of seasons to include in model ?
 
 Use PCA with Lasso, reduce variables with stepwise selection, use decision tree importance vs randon number generator to find important variables
