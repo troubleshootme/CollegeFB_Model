@@ -19,6 +19,8 @@ Conduct ex-post vs ex-ante analysis
 
 ARIMA model to find optimal number of seasons to include in model ?
 
+Use PCA with Lasso, reduce variables with stepwise selection, use decision trees to find important variables
+
 # College Football Prediction Model
 
 College Football database currently contains **17 tables**
