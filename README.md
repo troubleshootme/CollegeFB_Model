@@ -25,6 +25,10 @@ Develop hedging strategy
 
 Validate tables in database
 
+Find a way to discern between sharp and public movement
+
+Find a way to discern between high-confidence and low-confidence predictions
+
 
 
 # College Football Prediction Model
