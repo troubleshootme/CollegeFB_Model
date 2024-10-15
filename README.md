@@ -29,7 +29,7 @@ Find a way to discern between sharp and public movement
 
 Find a way to discern between high-confidence and low-confidence predictions
 
-
+post dashboard to personal website or new website (if new website, use ADO for username and password authentication, paywall some features)
 
 # College Football Prediction Model
 
