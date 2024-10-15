@@ -9,11 +9,15 @@ Get arrival flight time instead of distance (jet streams can add an hour plus to
  
 Maybe include stadium name or stadium buckets for noise and psychological effects
 
+
+
+General ideas:
+
 Talk to friend about running periodic update scripts regularly through the terminal
 
 Conduct ex-post vs ex-ante analysis
 
-
+ARIMA model to find optimal number of seasons to include in model ?
 
 # College Football Prediction Model
 
