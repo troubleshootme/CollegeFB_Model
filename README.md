@@ -63,9 +63,13 @@ index|INTEGER|0||0
 
 ----------------------------------------------------------------------------------------------------------------------------
 
-talent20s
+### talent20s
+
 2020,2021,2022,2023,2024 talent team composite scores
-may not be enough granual, have to look into how athletes are scored
+may not be enough granual, have to look into how athletes are scored, hoping this cans serve as a proxy for transfer and recruiting, it may have limitations though depending on player usage
+
 example of a team is Georgia2020 or Texas2022. 
 Columns
 index|team|talent|year
+
+----------------------------------------------------------------------------------------------------------------------------
