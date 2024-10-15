@@ -27,4 +27,17 @@ Columns: index|game_id|team_id|team_name|home_away|conference|points|rushingTDs|
 
 Columns: index|id|school|conference|division|elevation|capacity|latitude|longitude|grass|dome
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------
+### bets20
+### bets21
+### bets22
+### bets23
+### bets24
+
+Columns:
+bets24 has to be updated regularly. 
+index|game_id|season|season_type|week|start_date|away_team|away_conference|away_score|home_team|home_conference|home_score|provider0|formatted_spread0|spread0|over_under0|provider1|formatted_spread1|spread1|over_under1|provider2|formatted_spread2|spread2|over_under2
+
+-----------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------
