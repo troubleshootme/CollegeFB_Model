@@ -1,12 +1,12 @@
 # College Football Prediction Model
 
-College Football database currently contains 16 tables
+College Football database currently contains **16 tables**
 
-Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24,AdvancedSeasonGameStat23, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
+These tables are named Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24,AdvancedSeasonGameStat23, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### Games
-
+id column is game_id in other tables
 Columns: index|id|home_team|away_team|away_points|home_points
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ Columns: index|game_id|team_id|team_name|home_away|conference|points|rushingTDs|
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### fbsTeams
-
+id column is team_id in other tables
 Columns: index|id|school|conference|division|elevation|capacity|latitude|longitude|grass|dome
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
