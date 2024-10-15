@@ -19,7 +19,7 @@ Conduct ex-post vs ex-ante analysis
 
 ARIMA model to find optimal number of seasons to include in model ?
 
-Use PCA with Lasso, reduce variables with stepwise selection, use decision trees to find important variables
+Use PCA with Lasso, reduce variables with stepwise selection, use decision tree importance vs randon number generator to find important variables
 
 # College Football Prediction Model
 
