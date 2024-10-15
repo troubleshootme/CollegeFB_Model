@@ -13,13 +13,19 @@ Maybe include stadium name or stadium buckets for noise and psychological effect
 
 General ideas:
 
-Talk to friend about running periodic update scripts regularly through the terminal
+Talk to friend about automating periodic update scripts regularly through the terminal
 
 Conduct ex-post vs ex-ante analysis
 
 ARIMA model to find optimal number of seasons to include in model ?
 
 Use PCA with Lasso, reduce variables with stepwise selection, use decision tree importance vs randon number generator to find important variables
+
+Develop hedging strategy
+
+Validate tables in database
+
+
 
 # College Football Prediction Model
 
