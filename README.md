@@ -15,6 +15,8 @@ General ideas:
 
 Talk to friend about automating periodic update scripts regularly through the terminal
 
+conduct ex-post vs ex-ante analysis to test weather forecasts and other forecasts
+
 ARIMA model to find optimal number of seasons to include in model ?
 
 Use PCA with Lasso, reduce variables with stepwise selection, use decision tree importance vs randon number generator to find important variables
