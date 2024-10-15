@@ -1,6 +1,6 @@
 # College Football Prediction Model
 
-College Football database currently contains **16 tables**
+College Football database currently contains **17 tables**
 
 These tables are named Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
 
@@ -62,3 +62,10 @@ index|INTEGER|0||0
 28|sp_overall1|REAL|0||0
 
 ----------------------------------------------------------------------------------------------------------------------------
+
+talent20s
+2020,2021,2022,2023,2024 talent team composite scores
+may not be enough granual, have to look into how athletes are scored
+example of a team is Georgia2020 or Texas2022. 
+Columns
+index|team|talent|year
