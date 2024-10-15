@@ -9,7 +9,7 @@ Get arrival flight time instead of distance (jet streams can add an hour plus to
  
 Maybe include stadium name or stadium buckets for noise and psychological effects
 
-
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 General ideas:
 
