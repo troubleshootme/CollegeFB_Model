@@ -1,6 +1,6 @@
 # College Football Prediction Model
 
-College Football database currently contains 15 tables
+College Football database currently contains 16 tables
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### Games20
