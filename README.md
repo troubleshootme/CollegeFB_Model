@@ -2,7 +2,7 @@
 
 College Football database currently contains **16 tables**
 
-These tables are named Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24,AdvancedSeasonGameStat23, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
+These tables are named Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### Games
