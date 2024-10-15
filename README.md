@@ -15,7 +15,7 @@ General ideas:
 
 Talk to friend about automating periodic update scripts regularly through the terminal
 
-Conduct ex-post vs ex-ante analysis
+test predictions on a going-forward basis
 
 ARIMA model to find optimal number of seasons to include in model ?
 
