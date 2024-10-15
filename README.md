@@ -2,21 +2,15 @@
 
 College Football database currently contains 16 tables
 
+Games24, Games23, Games22, Games21, Games20, AdvancedSeasonGameStat24,AdvancedSeasonGameStat23, AdvancedSeasonGameStat23, AdvancedSeasonGameStat22, AdvancedSeasonGameStat21, AdvancedSeasonGameStat20, fbsTeams, bets24, bets23, bets22, bets21, bets20, and coachHist
+
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-### Games20
-### Games21
-### Games22
-### Games23
-## Games 24 is still needed
+### Games
 
 Columns: index|id|home_team|away_team|away_points|home_points
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-### AdvancedSeasonGameStat20
-### AdvancedSeasonGameStat21
-### AdvancedSeasonGameStat22
-### AdvancedSeasonGameStat23
-### AdvancedSeasonGameStat24
+### AdvancedSeasonGameStat
 AdvancedSeasonGameStat24 has to be updated regularly. It's last update was on Saturday night so it is missing games that ended late Saturday.
 Columns: index|game_id|team_id|team_name|home_away|conference|points|rushingTDs|puntReturnYards|puntReturnTDs|puntReturns|passingTDs|kickReturnYards|kickReturnTDs|kickReturns|kickingPoints|interceptionYards|interceptionTDs|passesIntercepted|fumblesRecovered|totalFumbles|tacklesForLoss|defensiveTDs|tackles|sacks|qbHurries|passesDeflected|possessionTime|interceptions|fumblesLost|turnovers|totalPenaltiesYards|yardsPerRushAttempt|rushingAttempts|rushingYards|yardsPerPass|completionAttempts|netPassingYards|totalYards|fourthDownEff|thirdDownEff|firstDowns
 
@@ -26,11 +20,7 @@ Columns: index|game_id|team_id|team_name|home_away|conference|points|rushingTDs|
 Columns: index|id|school|conference|division|elevation|capacity|latitude|longitude|grass|dome
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-### bets20
-### bets21
-### bets22
-### bets23
-### bets24
+### bets
 
 Columns:
 bets24 has to be updated regularly. 
