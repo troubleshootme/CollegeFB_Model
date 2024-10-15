@@ -2,7 +2,7 @@
 
 
 
-College Football database currently contains 12 tables
+College Football database currently contains 15 tables
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ### Games20
