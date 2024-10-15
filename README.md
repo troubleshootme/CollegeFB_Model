@@ -1,3 +1,15 @@
+
+
+Steps left on data gathering:
+Get weather data from another API that allows for lat and lon specification of stadium
+Get arrival flight time instead of distance (jet streams can add an hour plus to a flight)
+ --- look into flight trackers to see if arrival time before game is significant
+Maybe include stadium name or stadium buckets for noise and psychological effects
+Talk to friend about running periodic update scripts regularly through the terminal
+Conduct ex-post vs ex-ante analysis
+
+
+
 # College Football Prediction Model
 
 College Football database currently contains **17 tables**
