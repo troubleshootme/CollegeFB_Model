@@ -3,6 +3,8 @@ I have every variable / the means to create every variable from the https://www.
 I am using talent as a proxy for recruitment and transfer portal data - but, I'm not sure. 
 
 I don't have a way to model injuries yet
+
+
 Steps left on data gathering:
 Get weather data from another API that allows for lat and lon specification of stadium
 
