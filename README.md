@@ -1,5 +1,7 @@
 I have every variable / the means to create every variable from the https://www.researchgate.net/publication/338728435_Forecasting_college_football_game_outcomes_using_modern_modeling_techniques paper. Also, I'm choosing to model the second most important variable (home / away) with dimensions like flight arrival time or distance, change in evelation / temp / conditions, stadium buckets to discern high noise, high intensity stadiums.
 
+Converted json data to a pandas dataframe then converted to sql. I could have used NoSQL but I don't want to waste my time learning the syntax.
+
 Looking around at other scholarly articles:
 https://www.sciencedirect.com/science/article/pii/S2772662223001364
 
