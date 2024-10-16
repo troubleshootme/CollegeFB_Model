@@ -1,4 +1,4 @@
-
+I have every variable (and more) from the https://www.researchgate.net/publication/338728435_Forecasting_college_football_game_outcomes_using_modern_modeling_techniques paper. Also, I'm choosing to model the second most important variable (home / away) with dimensions like flight arrival time or distance, change in evelation / temp / conditions, stadium buckets to discern high noise, high intensity stadiums
 
 Steps left on data gathering:
 Get weather data from another API that allows for lat and lon specification of stadium
