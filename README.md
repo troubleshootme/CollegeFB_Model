@@ -104,7 +104,7 @@ index|INTEGER|0||0
 ### talent20s
 
 2020,2021,2022,2023,2024 talent team composite scores
-may not be enough granual, have to look into how athletes are scored, hoping this cans serve as a proxy for transfer and recruiting, it may have limitations though depending on player usage
+may not be granual enough, have to look into how athletes are scored, hoping this cans serve as a proxy for transfer and recruiting, it may have limitations though depending on player usage
 
 Columns
 index|team|talent|year
