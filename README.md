@@ -1,5 +1,8 @@
 I have every variable / the means to create every variable from the https://www.researchgate.net/publication/338728435_Forecasting_college_football_game_outcomes_using_modern_modeling_techniques paper. Also, I'm choosing to model the second most important variable (home / away) with dimensions like flight arrival time or distance, change in evelation / temp / conditions, stadium buckets to discern high noise, high intensity stadiums.
 
+Looking around at other scholarly articles:
+https://www.sciencedirect.com/science/article/pii/S2772662223001364
+
 7 years of data makes more sense than 5, getting two more years is a good idea.
 
 I am using talent as a proxy for recruitment and transfer portal data - but, I'm not sure. 
