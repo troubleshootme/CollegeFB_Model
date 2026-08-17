@@ -1,0 +1,32 @@
+{
+  "columns": [
+    "week",
+    "neutral_site",
+    "conference_game",
+    "elo_diff",
+    "talent_diff",
+    "prior_sp_diff",
+    "games_played_home",
+    "games_played_away",
+    "games_played_diff",
+    "rest_days_home",
+    "rest_days_away",
+    "rest_diff",
+    "travel_miles_away",
+    "travel_miles_home",
+    "elevation_diff",
+    "grass",
+    "dome",
+    "capacity",
+    "noise_bucket",
+    "margin_std_diff",
+    "margin_l4_diff",
+    "pf_std_diff",
+    "pa_std_diff",
+    "prior_margin_diff",
+    "margin_shrunk_diff"
+  ],
+  "sigma": 16.25641909197726,
+  "champion": "ridge",
+  "n_train": 3140
+}

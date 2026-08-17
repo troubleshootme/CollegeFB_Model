@@ -1,0 +1,17 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+data/cfb.db
+data/cache/
+data/features.csv
+data/walkforward_predictions.csv
+data/predictions_*.csv
+models/*.pkl
+*.egg-info/
+.coverage
+htmlcov/
