@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 pandas>=2.0
 numpy>=1.24
 scikit-learn==1.6.1
@@ -8,3 +9,16 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.0
 httpx>=0.27
+=======
+cfbd>=5.24.0
+pandas>=2.0
+numpy>=1.26
+scikit-learn>=1.4
+xgboost>=2.0
+joblib>=1.3
+requests>=2.31
+scipy>=1.11
+python-dotenv>=1.0
+pytest>=8.0
+matplotlib>=3.8
+>>>>>>> f1f10cc (Add leakage-safe CFB prediction model on CFBD API v2.)
