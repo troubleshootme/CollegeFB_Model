@@ -1,0 +1,1 @@
+"""College football prediction pipeline."""

@@ -1,0 +1,12 @@
+.git
+.ipynb_checkpoints
+__pycache__
+*.pyc
+.venv
+venv
+web/node_modules
+web/dist
+modelling
+data_collection_preparation
+.omc
+*.md

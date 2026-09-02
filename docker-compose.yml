@@ -1,0 +1,63 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: cfb-model-nginx
+    ports:
+      - "38417:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - cfb-model
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cfb-model-api
+    environment:
+      PYTHONUNBUFFERED: "1"
+      CFBD_API_KEY: ${CFBD_API_KEY:-}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+    volumes:
+      - ./:/app
+    networks:
+      - cfb-model
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: cfb-model-web
+    environment:
+      API_PROXY: http://api:8000
+    volumes:
+      - ./web:/app
+      - web-node-modules:/app/node_modules
+    networks:
+      - cfb-model
+    restart: unless-stopped
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - api
+
+networks:
+  cfb-model:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.40.0/24
+
+volumes:
+  web-node-modules:
