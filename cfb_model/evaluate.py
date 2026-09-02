@@ -43,7 +43,7 @@ def walk_forward(
         ridge_mae = mean_absolute_error(test[TARGET_COL], models["ridge"].predict(X_test))
         xgb_mae = mean_absolute_error(test[TARGET_COL], models["xgb"].predict(models["imputer"].transform(X_test)))
         models["champion"] = "xgb" if xgb_mae <= ridge_mae else "ridge"
-        pred = predict_frame(models, test)
+        pred = predict_frame(models, test, apply_learning=False)
         pred["fold_year"] = test_year
         scored_parts.append(pred)
         folds.append(
@@ -203,4 +203,10 @@ def run_evaluate(save: bool = True) -> dict:
         scored_path = config.DATA_DIR / "walkforward_predictions.csv"
         if not scored.empty:
             scored.to_csv(scored_path, index=False)
+        try:
+            from cfb_model.learn import run_learn
+
+            run_learn(scored=scored, db=False, refresh_identity=False)
+        except Exception as exc:
+            print(f"learn skipped: {exc}")
     return summary

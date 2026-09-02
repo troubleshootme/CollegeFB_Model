@@ -12,6 +12,7 @@ from cfb_model.util import (
     getv,
     iso_date,
     parse_efficiency,
+    parse_line_scores,
     parse_pair,
     parse_possession,
 )
@@ -31,6 +32,12 @@ def flatten_games(payload: Any) -> list[dict[str, Any]]:
         game_id = as_int(getv(game, "id"))
         if game_id is None:
             continue
+        home_q1, home_q2, home_q3, home_q4 = parse_line_scores(
+            getv(game, "home_line_scores") or getv(game, "homeLineScores")
+        )
+        away_q1, away_q2, away_q3, away_q4 = parse_line_scores(
+            getv(game, "away_line_scores") or getv(game, "awayLineScores")
+        )
         rows.append(
             {
                 "id": game_id,
@@ -48,6 +55,10 @@ def flatten_games(payload: Any) -> list[dict[str, Any]]:
                 "home_conference": getv(game, "home_conference"),
                 "home_classification": enum_value(getv(game, "home_classification")),
                 "home_points": as_float(getv(game, "home_points")),
+                "home_q1": home_q1,
+                "home_q2": home_q2,
+                "home_q3": home_q3,
+                "home_q4": home_q4,
                 "home_pregame_elo": as_float(getv(game, "home_pregame_elo")),
                 "home_postgame_elo": as_float(getv(game, "home_postgame_elo")),
                 "home_postgame_wp": as_float(
@@ -60,6 +71,10 @@ def flatten_games(payload: Any) -> list[dict[str, Any]]:
                 "away_conference": getv(game, "away_conference"),
                 "away_classification": enum_value(getv(game, "away_classification")),
                 "away_points": as_float(getv(game, "away_points")),
+                "away_q1": away_q1,
+                "away_q2": away_q2,
+                "away_q3": away_q3,
+                "away_q4": away_q4,
                 "away_pregame_elo": as_float(getv(game, "away_pregame_elo")),
                 "away_postgame_elo": as_float(getv(game, "away_postgame_elo")),
                 "away_postgame_wp": as_float(
@@ -502,6 +517,141 @@ def flatten_wepa(payload: Any) -> list[dict[str, Any]]:
                 "success_rate_allowed": as_float(getv(success_allowed, "total")),
                 "explosiveness": as_float(getv(item, "explosiveness")),
                 "explosiveness_allowed": as_float(getv(item, "explosiveness_allowed")),
+            }
+        )
+    return rows
+
+
+def flatten_fpi(payload: Any) -> list[dict[str, Any]]:
+    rows = []
+    for item in _iter(payload):
+        team = getv(item, "team")
+        year = as_int(getv(item, "year") or getv(item, "season"))
+        if not team or year is None:
+            continue
+        eff = getv(item, "efficiencies") or {}
+        rows.append(
+            {
+                "year": year,
+                "team": team,
+                "conference": getv(item, "conference"),
+                "fpi": as_float(getv(item, "fpi") or getv(item, "rating")),
+                "fpi_rank": as_int(getv(item, "fpi_rank") or getv(item, "rank")),
+                "offense": as_float(getv(eff, "offense")),
+                "defense": as_float(getv(eff, "defense")),
+                "special_teams": as_float(getv(eff, "special_teams") or getv(eff, "specialTeams")),
+                "overall_eff": as_float(getv(eff, "overall")),
+                "source": getv(item, "source") or "cfbd",
+                "as_of": iso_date(getv(item, "as_of")),
+            }
+        )
+    return rows
+
+
+def flatten_player_season_stats(payload: Any) -> list[dict[str, Any]]:
+    rows = []
+    for item in _iter(payload):
+        player = getv(item, "player") or getv(item, "name") or getv(item, "athlete")
+        if isinstance(player, dict):
+            player_id = as_int(getv(player, "id")) or getv(player, "id")
+            position = getv(player, "position")
+            player = getv(player, "name") or getv(player, "display_name")
+        else:
+            player_id = getv(item, "player_id") or getv(item, "athlete_id") or getv(item, "id")
+            position = getv(item, "position")
+        team = getv(item, "team") or getv(item, "school")
+        season = as_int(getv(item, "season") or getv(item, "year"))
+        if not player or not team or season is None:
+            continue
+        stats = getv(item, "stat") or getv(item, "stats") or item
+        category = (getv(item, "category") or getv(item, "stat_type") or "all")
+        if isinstance(category, str):
+            category = category.lower()
+        else:
+            category = "all"
+        rows.append(
+            {
+                "season": season,
+                "player_id": None if player_id is None else str(player_id),
+                "player": player,
+                "position": position if not isinstance(position, dict) else getv(position, "abbreviation"),
+                "team": team,
+                "conference": getv(item, "conference"),
+                "category": category,
+                "games": as_float(getv(item, "games") or getv(stats, "games")),
+                "attempts": as_float(
+                    getv(stats, "attempts")
+                    or getv(item, "passing_attempts")
+                    or getv(item, "rushing_attempts")
+                ),
+                "completions": as_float(getv(stats, "completions") or getv(item, "passing_completions")),
+                "yards": as_float(
+                    getv(stats, "yards") or getv(item, "passing_yards") or getv(item, "rushing_yards")
+                ),
+                "touchdowns": as_float(
+                    getv(stats, "touchdowns") or getv(item, "passing_tds") or getv(item, "rushing_tds")
+                ),
+                "interceptions": as_float(getv(stats, "interceptions") or getv(item, "passing_ints")),
+                "yards_per_attempt": as_float(getv(stats, "yards_per_attempt") or getv(item, "yards_per_pass")),
+                "yards_per_carry": as_float(getv(stats, "yards_per_carry") or getv(item, "yards_per_rush")),
+                "rating": as_float(getv(stats, "rating") or getv(item, "qbr") or getv(item, "passer_rating")),
+            }
+        )
+    return rows
+
+
+def flatten_player_ppa(payload: Any) -> list[dict[str, Any]]:
+    rows = []
+    for item in _iter(payload):
+        player = getv(item, "name") or getv(item, "player")
+        team = getv(item, "team") or getv(item, "school")
+        season = as_int(getv(item, "season") or getv(item, "year"))
+        if not player or not team or season is None:
+            continue
+        avg = getv(item, "average_ppa") or getv(item, "averagePPA") or {}
+        if not isinstance(avg, dict):
+            avg = {"all": avg}
+        usage = getv(item, "usage") or {}
+        rows.append(
+            {
+                "season": season,
+                "player_id": None if getv(item, "player_id") is None and getv(item, "id") is None else str(
+                    getv(item, "player_id") or getv(item, "id")
+                ),
+                "player": player,
+                "position": getv(item, "position"),
+                "team": team,
+                "conference": getv(item, "conference"),
+                "average_ppa": as_float(getv(avg, "all") or getv(avg, "overall") or getv(item, "average_ppa")),
+                "passing": as_float(getv(avg, "pass") or getv(avg, "passing")),
+                "rushing": as_float(getv(avg, "rush") or getv(avg, "rushing")),
+                "usage": as_float(getv(usage, "overall") if isinstance(usage, dict) else usage),
+            }
+        )
+    return rows
+
+
+def flatten_portal(payload: Any) -> list[dict[str, Any]]:
+    rows = []
+    for item in _iter(payload):
+        first = getv(item, "first_name") or ""
+        last = getv(item, "last_name") or ""
+        player = getv(item, "player") or getv(item, "name") or f"{first} {last}".strip()
+        season = as_int(getv(item, "season") or getv(item, "year"))
+        origin = getv(item, "origin") or getv(item, "from_team") or getv(item, "previous")
+        if not player or season is None:
+            continue
+        rows.append(
+            {
+                "season": season,
+                "player_id": None if getv(item, "player_id") is None else str(getv(item, "player_id")),
+                "player": player,
+                "position": getv(item, "position"),
+                "origin": origin,
+                "destination": getv(item, "destination") or getv(item, "to_team") or getv(item, "school"),
+                "stars": as_float(getv(item, "stars") or getv(item, "rating")),
+                "eligibility": getv(item, "eligibility"),
+                "transfer_date": iso_date(getv(item, "transfer_date") or getv(item, "date")),
             }
         )
     return rows

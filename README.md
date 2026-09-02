@@ -55,8 +55,11 @@ Open-Meteo ─┘                      │
 | `python -m cfb_model ingest` | Full CFBD pull for a 75k/month Pro key (week-level havoc/box/Elo, WEPA, weather). `--lite` for year-level only; `--no-weather` to skip weather |
 | `python -m cfb_model migrate` | Load `collegeFootball.db` into the normalized schema |
 | `python -m cfb_model features` | Write `data/features.csv` |
-| `python -m cfb_model train` | Walk-forward train/eval; write `models/` |
+| `python -m cfb_model train` | Walk-forward train/eval; write `models/`; update learning state |
 | `python -m cfb_model evaluate` | Same as train, prints fold metrics |
+| `python -m cfb_model learn` | Score finalized games; EWMA bias / sigma / injury scale |
+| `python -m cfb_model injuries` | ESPN injury snapshot (no CFBD quota) |
+| `python -m cfb_model profile --qb NAME --year YYYY` | Print a QB identity card |
 | `python -m cfb_model predict --year 2026 --week N` | Weekly CSV of margin, WP, edge, confidence |
 
 On ingest start the client calls `GET /info` and skips WEPA / CFBD weather when the key’s tier does not include those features.
@@ -65,7 +68,7 @@ On ingest start the client calls `GET /info` and skips WEPA / CFBD weather when 
 
 Normalized SQLite at `data/cfb.db` (gitignored). Schema: [`cfb_model/schema.sql`](cfb_model/schema.sql).
 
-Important tables: `games` (**keeps `id`**), `lines` (one row per provider), `ppa_games`, `advanced_game_stats`, `talent`, `recruiting_teams`, `returning_production`, `core_ratings`, `sp_ratings` (prior-season only in features), `venues`, `teams`, `coaches_seasons`, `weather`.
+Important tables: `games` (**keeps `id`**), `lines` (one row per provider), `ppa_games`, `advanced_game_stats`, `talent`, `recruiting_teams`, `returning_production`, `core_ratings`, `sp_ratings`, `fpi_ratings` (prior-season only in features), `player_season_stats`, `player_ppa`, `transfer_portal`, `injury_reports` (as-of snapshots), `venues`, `teams`, `coaches_seasons`, `weather`.
 
 `collegeFootball.db` is the old year-sharded archive (`Games2024`, `bets24`, …). It dropped `game_id` on games and flattened lines incorrectly. `migrate` reconstructs ids from the bets stream and parses text stats (`3-7`, `35:42`).
 
@@ -94,7 +97,9 @@ modelling/model_1.0            # unfinished linear POC
 
 ## Notes and later work
 
-Injuries are not in CFBD — returning production and the portal are the proxies. Flight arrival times, hedging, and a public dashboard are still out of scope.
+Injuries are snapshotted from ESPN (CFBD has no injury endpoint). Each ingest stores an as-of report and joins the latest snapshot *before kickoff*. Stale leftover rows are dropped. Quarterbacks are first-class profiles (like coaches): the model follows the passer across schools via the transfer portal, weights QB availability above every other position, and treats dual-threat QBs as a second offense that can punch above roster talent / FPI. `python -m cfb_model learn` scores published cards against finals and updates bias, residual scale, and the injury prior.
+
+Flight arrival times, hedging, and a public dashboard are still out of scope.
 
 Original research pointers:
 

@@ -53,6 +53,22 @@ FEATURE_COLS = [
     "off_ppa_shrunk_diff",
     "def_ppa_shrunk_diff",
     "margin_shrunk_diff",
+    "prior_fpi_diff",
+    "run_fit_diff",
+    "off_rush_2ply_diff",
+    "def_rush_2ply_diff",
+    "coach_aggression_diff",
+    "coach_rush_share_diff",
+    "coach_tempo_diff",
+    "qb_ppa_diff",
+    "qb_dynamic_diff",
+    "qb_punch_diff",
+    "qb_ypa_diff",
+    "qb_rush_share_diff",
+    "injury_load_diff",
+    "qb_injury_diff",
+    "ol_injury_diff",
+    "skill_injury_diff",
 ]
 
 BLEND_FEATURE_COLS = FEATURE_COLS + ["open_spread"]
@@ -107,6 +123,11 @@ def build_features(
                 "coaches_seasons",
                 "pregame_wp",
                 "weather",
+                "fpi_ratings",
+                "injury_reports",
+                "player_season_stats",
+                "player_ppa",
+                "transfer_portal",
             ]
         }
     finally:
@@ -129,6 +150,7 @@ def build_features(
     frame = _attach_priors(frame, tables)
     frame = _context_features(frame)
     frame = _diffs_and_shrinkage(frame)
+    frame = _attach_identity_layers(frame, games, tables)
     frame[TARGET_COL] = frame["home_points"] - frame["away_points"]
     frame["week_bucket"] = np.where(frame["week"].fillna(99) <= 4, "early", "midlate")
     frame["is_service_academy"] = (
@@ -231,7 +253,7 @@ def _attach_venues(games: pd.DataFrame, venues: pd.DataFrame, teams: pd.DataFram
         keep_a = [c for c in ("away_team", "away_lat", "away_lon", "away_elevation") if c in away_geo]
         games = games.merge(home_geo[keep_h].drop_duplicates("home_team"), on="home_team", how="left")
         games = games.merge(away_geo[keep_a].drop_duplicates("away_team"), on="away_team", how="left")
-        if "grass" not in games and "team_grass" in t.columns:
+        if "grass" not in games.columns and "grass" in teams.columns:
             pass
         if "capacity" not in games.columns and "capacity" in teams.columns:
             cap = teams[["school", "capacity", "grass", "dome"]].rename(columns={"school": "home_team"})
@@ -389,6 +411,7 @@ def _attach_priors(frame: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> pd.D
         ("sp_ratings", "rating", "home_prior_sp", "away_prior_sp"),
         ("core_ratings", "overall", "home_prior_core", "away_prior_core"),
         ("wepa_season", "epa_total", "home_prior_wepa", "away_prior_wepa"),
+        ("fpi_ratings", "fpi", "home_prior_fpi", "away_prior_fpi"),
     ]:
         table = tables[table_name]
         frame[home_name] = np.nan
@@ -399,7 +422,7 @@ def _attach_priors(frame: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> pd.D
         prior = table[[year_col, "team", value_col]].copy()
         prior[year_col] = prior[year_col] + 1
         prior = prior.rename(columns={year_col: "season", value_col: "val"})
-        if table_name == "core_ratings":
+        if table_name in {"core_ratings", "fpi_ratings"}:
             prior = prior.drop_duplicates(["season", "team"], keep="last")
         hh = prior.rename(columns={"team": "home_team", "val": home_name})
         frame = frame.drop(columns=[home_name]).merge(hh, on=["season", "home_team"], how="left")
@@ -462,6 +485,7 @@ def _diffs_and_shrinkage(frame: pd.DataFrame) -> pd.DataFrame:
     frame["prior_sp_diff"] = frame.get("home_prior_sp") - frame.get("away_prior_sp")
     frame["prior_core_diff"] = frame.get("home_prior_core") - frame.get("away_prior_core")
     frame["prior_wepa_diff"] = frame.get("home_prior_wepa") - frame.get("away_prior_wepa")
+    frame["prior_fpi_diff"] = frame.get("home_prior_fpi") - frame.get("away_prior_fpi")
     frame["games_played_home"] = frame.get("home_games_played")
     frame["games_played_away"] = frame.get("away_games_played")
     frame["games_played_diff"] = frame["games_played_home"] - frame["games_played_away"]
@@ -531,4 +555,60 @@ def _diffs_and_shrinkage(frame: pd.DataFrame) -> pd.DataFrame:
             frame.get("away_games_played", pd.Series(0, index=frame.index)),
         )
     ]
+    return frame
+
+
+def _attach_identity_layers(frame: pd.DataFrame, games: pd.DataFrame, tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Coach, scheme, QB (who starts), and as-of injuries. All leakage-safe."""
+    try:
+        from cfb_model.identity import attach_scheme_features
+
+        frame = attach_scheme_features(frame, games, tables.get("team_game_stats"))
+    except Exception:
+        for col in ("run_fit_diff", "off_rush_2ply_diff", "def_rush_2ply_diff"):
+            if col not in frame.columns:
+                frame[col] = np.nan
+    try:
+        from cfb_model.coaches import attach_coaches, build_coach_season_table
+
+        profiles = build_coach_season_table(
+            tables.get("coaches_seasons", pd.DataFrame()),
+            games,
+            tables.get("team_game_stats", pd.DataFrame()),
+            tables.get("advanced_game_stats"),
+            tables.get("ppa_games"),
+            tables.get("teams"),
+        )
+        frame = attach_coaches(frame, profiles)
+    except Exception:
+        pass
+    try:
+        from cfb_model.players import attach_quarterbacks, build_qb_season_table
+
+        qb_table = build_qb_season_table(
+            tables.get("player_season_stats", pd.DataFrame()),
+            tables.get("player_ppa"),
+            tables.get("transfer_portal"),
+            tables.get("talent"),
+        )
+        live = None
+        if not tables.get("player_season_stats", pd.DataFrame()).empty:
+            stats = tables["player_season_stats"]
+            if "season" in stats.columns:
+                current = stats[stats["season"] == config.CURRENT_SEASON]
+                if not current.empty and "completed" in frame.columns and frame["completed"].fillna(0).astype(int).eq(0).any():
+                    live = current
+        injuries = tables.get("injury_reports", pd.DataFrame())
+        frame = attach_quarterbacks(frame, qb_table, injuries=injuries, live_stats=live)
+    except Exception:
+        for col in ("qb_ppa_diff", "qb_dynamic_diff", "qb_punch_diff", "qb_out_points_diff"):
+            if col not in frame.columns:
+                frame[col] = np.nan
+    try:
+        from cfb_model.injuries import attach_injuries
+
+        frame = attach_injuries(frame, tables.get("injury_reports", pd.DataFrame()))
+    except Exception:
+        if "injury_load_diff" not in frame.columns:
+            frame["injury_load_diff"] = np.nan
     return frame

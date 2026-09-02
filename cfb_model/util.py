@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from typing import Any
+
+import pandas as pd
 
 _CAMEL_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
@@ -104,6 +107,27 @@ def parse_efficiency(value: Any) -> tuple[float | None, float | None, float | No
     return made, att, made / att
 
 
+def parse_line_scores(value: Any) -> tuple[int | None, int | None, int | None, int | None]:
+    """Parse CFBD homeLineScores / awayLineScores into (q1, q2, q3, q4)."""
+    if value is None or value == "":
+        return None, None, None, None
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            value = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            nums = re.findall(r"-?\d+", text)
+            value = [int(n) for n in nums]
+    if not isinstance(value, (list, tuple)):
+        return None, None, None, None
+    out: list[int | None] = []
+    for item in list(value)[:4]:
+        out.append(as_int(item))
+    while len(out) < 4:
+        out.append(None)
+    return out[0], out[1], out[2], out[3]
+
+
 def parse_possession(value: Any) -> float | None:
     """Convert 'MM:SS' or seconds to seconds."""
     if value is None or value == "":
@@ -120,15 +144,44 @@ def parse_possession(value: Any) -> float | None:
 
 
 def shrink(current: float | None, prior: float | None, n: float, k: float = 4.0) -> float | None:
-    """James-Stein / empirical-Bayes blend toward a prior."""
+    """James-Stein / empirical-Bayes blend toward a prior.
+
+    weight = n / (n + k). n=0 (no games yet) is 100% prior — week 1 uses FPI,
+    talent, coach scheme, and last year, not a fake in-season sample.
+    """
+    if isinstance(current, float) and math.isnan(current):
+        current = None
+    if isinstance(prior, float) and math.isnan(prior):
+        prior = None
     if current is None and prior is None:
         return None
     if current is None:
         return prior
-    if prior is None or n <= 0:
+    if prior is None:
         return current
+    if n <= 0:
+        return prior
     weight = n / (n + k)
     return weight * current + (1.0 - weight) * prior
+
+
+def zscore(s: pd.Series) -> pd.Series:
+    """Season-safe z-score; constant columns become 0."""
+    s = pd.to_numeric(s, errors="coerce")
+    std = s.std(ddof=0)
+    if std is None or pd.isna(std) or float(std) == 0.0:
+        return pd.Series(0.0, index=s.index)
+    return (s - s.mean()) / std
+
+
+def shrink_series(current: pd.Series, prior: pd.Series, n: pd.Series, k: float) -> pd.Series:
+    cur = pd.to_numeric(current, errors="coerce")
+    base = pd.to_numeric(prior, errors="coerce")
+    sample = pd.to_numeric(n, errors="coerce").fillna(0).clip(lower=0)
+    weight = sample / (sample + k)
+    blended = weight * cur + (1.0 - weight) * base
+    blended = blended.where(cur.notna(), base)
+    return blended.where(base.notna(), cur)
 
 
 def haversine_miles(lat1: float | None, lon1: float | None, lat2: float | None, lon2: float | None) -> float | None:

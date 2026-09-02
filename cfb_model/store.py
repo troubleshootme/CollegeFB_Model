@@ -20,15 +20,37 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+_GAMES_QUARTER_COLS = [
+    "home_q1",
+    "home_q2",
+    "home_q3",
+    "home_q4",
+    "away_q1",
+    "away_q2",
+    "away_q3",
+    "away_q4",
+]
+
+
 def init_schema(conn: sqlite3.Connection | None = None) -> sqlite3.Connection:
     own = conn is None
     conn = conn or connect()
     schema = config.SCHEMA_PATH.read_text()
     conn.executescript(schema)
+    _ensure_columns(conn, "games", _GAMES_QUARTER_COLS)
     conn.commit()
     if own:
         return conn
     return conn
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: list[str], sql_type: str = "REAL") -> None:
+    if not table_exists(conn, table):
+        return
+    existing = {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+    for name in columns:
+        if name not in existing:
+            conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
 
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:

@@ -9,6 +9,14 @@ import pandas as pd
 from cfb_model import config, store
 from cfb_model.client import CfbdClient, classification_fbs, season_type
 from cfb_model.ingest import flatten as F
+from cfb_model.quota import (
+    cache_key,
+    live_seasons,
+    stored_seasons,
+    table_has_rows,
+    weeks_to_fetch,
+    years_to_ingest,
+)
 
 
 def _frame(rows: list[dict]) -> pd.DataFrame:
@@ -27,8 +35,10 @@ def run_ingest(
     end_year: int | None = None,
     *,
     include_weather: bool | None = None,
+    include_injuries: bool = True,
     full: bool | None = None,
     use_cache: bool = True,
+    force: bool = False,
     client: CfbdClient | None = None,
 ) -> dict[str, int]:
     """Download 2016–current FBS data.
@@ -54,18 +64,32 @@ def run_ingest(
     counts: dict[str, int] = {}
     conn = store.init_schema()
     try:
-        counts["venues"] = _ingest_venues(client, conn, use_cache)
+        existing = stored_seasons(conn)
+        years = years_to_ingest(start_year, end_year, existing, force=force)
+        print(f"ingest years {years} (force={force})")
+        if force or not table_has_rows(conn, "venues"):
+            counts["venues"] = _ingest_venues(client, conn, use_cache)
+        else:
+            counts["venues"] = 0
         counts["teams"] = _ingest_teams(client, conn, end_year, use_cache)
         counts["coaches"] = _ingest_coaches(client, conn, start_year, end_year, use_cache)
-        for year in range(start_year, end_year + 1):
+        for year in years:
             print(f"ingest year {year}")
-            year_counts = _ingest_year(client, conn, year, use_cache=use_cache, full=full)
+            year_counts = _ingest_year(client, conn, year, use_cache=use_cache, full=full, force=force)
             for key, value in year_counts.items():
                 counts[key] = counts.get(key, 0) + value
         if include_weather:
             from cfb_model.weather import ingest_weather
 
             counts["weather"] = ingest_weather(conn, client=client, use_cache=use_cache)
+        if include_injuries:
+            from cfb_model.injuries import ingest_injuries
+
+            try:
+                counts["injury_reports"] = ingest_injuries(conn)
+            except Exception as exc:
+                print(f"injuries skipped: {exc}")
+                counts["injury_reports"] = 0
         store.set_meta(conn, "last_ingest", datetime.now(timezone.utc).isoformat())
         store.set_meta(conn, "start_year", str(start_year))
         store.set_meta(conn, "end_year", str(end_year))
@@ -102,15 +126,16 @@ def _ingest_coaches(client: CfbdClient, conn, start: int, end: int, use_cache: b
     return store.replace_all(conn, "coaches_seasons", _frame(rows))
 
 
-def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: bool = False) -> dict[str, int]:
+def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: bool = False, force: bool = False) -> dict[str, int]:
     fbs = classification_fbs()
     counts: dict[str, int] = {}
+    live = year in live_seasons()
 
     games: list[dict] = []
     for kind in ("regular", "postseason"):
         st = season_type(kind)
         payload = client.cached_call(
-            f"games_{year}_{kind}_fbs",
+            cache_key(f"games_{year}_{kind}_fbs", year),
             lambda st=st: client.games.get_games(year=year, season_type=st, classification=fbs),
             use_cache,
         )
@@ -168,6 +193,8 @@ def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: boo
     counts["advanced_game_stats"] = _save_year(conn, "advanced_game_stats", advanced, "season", year)
 
     weeks = sorted({g.get("week") for g in games if g.get("week") is not None})
+    if live and not force:
+        weeks = weeks_to_fetch(games) or weeks
     havoc: list[dict] = []
     try:
         payload = client.cached_call(
@@ -298,7 +325,7 @@ def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: boo
 
     try:
         wepa = client.cached_call(
-            f"wepa_{year}",
+            cache_key(f"wepa_{year}", year),
             lambda: client.adjusted.get_adjusted_team_season_stats(year=year),
             use_cache,
         )
@@ -307,7 +334,103 @@ def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: boo
         print(f"  WEPA skipped: {exc}")
         counts["wepa_season"] = 0
 
+    counts.update(_ingest_player_year(client, conn, year, use_cache))
+
     remaining = client.remaining_calls()
     if remaining is not None:
         print(f"  remaining API calls: {remaining}")
+    return counts
+
+
+def _try_api(obj, names: list[str], **kwargs):
+    last = None
+    for name in names:
+        fn = getattr(obj, name, None)
+        if fn is None:
+            continue
+        try:
+            return fn(**kwargs)
+        except TypeError as exc:
+            last = exc
+            continue
+        except Exception as exc:
+            last = exc
+            continue
+    if last:
+        raise last
+    raise AttributeError(f"none of {names} on {type(obj)}")
+
+
+def _ingest_player_year(client: CfbdClient, conn, year: int, use_cache: bool) -> dict[str, int]:
+    """Year-level QB identity sources: season stats, player PPA, portal, FPI."""
+    counts: dict[str, int] = {}
+    try:
+        payload = client.cached_call(
+            cache_key(f"player_stats_{year}", year),
+            lambda: _try_api(
+                client.stats,
+                ["get_player_season_stats", "get_season_player_stats"],
+                year=year,
+            ),
+            use_cache,
+        )
+        rows = F.flatten_player_season_stats(payload)
+        if not rows:
+            for category in ("passing", "rushing"):
+                extra = client.cached_call(
+                    cache_key(f"player_stats_{year}_{category}", year),
+                    lambda category=category: _try_api(
+                        client.stats,
+                        ["get_player_season_stats", "get_season_player_stats"],
+                        year=year,
+                        category=category,
+                    ),
+                    use_cache,
+                )
+                rows.extend(F.flatten_player_season_stats(extra))
+        counts["player_season_stats"] = _save_year(conn, "player_season_stats", rows, "season", year)
+    except Exception as exc:
+        print(f"  player season stats skipped: {exc}")
+        counts["player_season_stats"] = 0
+
+    try:
+        payload = client.cached_call(
+            cache_key(f"player_ppa_{year}", year),
+            lambda: _try_api(
+                client.metrics,
+                [
+                    "get_predicted_points_added_by_player",
+                    "get_player_ppa",
+                    "get_predicted_points_added_players",
+                ],
+                year=year,
+            ),
+            use_cache,
+        )
+        counts["player_ppa"] = _save_year(conn, "player_ppa", F.flatten_player_ppa(payload), "season", year)
+    except Exception as exc:
+        print(f"  player PPA skipped: {exc}")
+        counts["player_ppa"] = 0
+
+    try:
+        payload = client.cached_call(
+            cache_key(f"portal_{year}", year),
+            lambda: _try_api(client.players, ["get_transfer_portal", "get_portal"], year=year),
+            use_cache,
+        )
+        counts["transfer_portal"] = _save_year(conn, "transfer_portal", F.flatten_portal(payload), "season", year)
+    except Exception as exc:
+        print(f"  portal skipped: {exc}")
+        counts["transfer_portal"] = 0
+
+    try:
+        payload = client.cached_call(
+            cache_key(f"fpi_{year}", year),
+            lambda: _try_api(client.ratings, ["get_fpi", "get_fpi_ratings"], year=year),
+            use_cache,
+        )
+        counts["fpi_ratings"] = _save_year(conn, "fpi_ratings", F.flatten_fpi(payload), "year", year)
+    except Exception as exc:
+        print(f"  FPI skipped: {exc}")
+        counts["fpi_ratings"] = 0
     return counts

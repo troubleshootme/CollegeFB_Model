@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip CFBD / Open-Meteo weather",
     )
     ingest.add_argument("--no-cache", action="store_true")
+    ingest.add_argument("--force", action="store_true", help="Re-pull seasons already stored")
+    ingest.add_argument("--no-injuries", action="store_true", help="Skip ESPN injury snapshot")
 
     sub.add_parser("migrate", help="Import collegeFootball.db into the normalized warehouse")
 
@@ -44,6 +46,18 @@ def main(argv: list[str] | None = None) -> int:
     pred.add_argument("--out", type=Path, default=None)
     pred.add_argument("--retrain", action="store_true")
 
+    sub.add_parser("learn", help="Score finalized games and update the self-improving state")
+
+    inj = sub.add_parser("injuries", help="Snapshot ESPN injury reports (no CFBD quota)")
+    inj.add_argument("--year", type=int, default=config.CURRENT_SEASON)
+
+    prof = sub.add_parser("profile", help="Print a team / coach / QB identity card")
+    prof.add_argument("--year", type=int, default=config.CURRENT_SEASON)
+    prof.add_argument("--team", type=str, default=None)
+    prof.add_argument("--coach", type=str, default=None)
+    prof.add_argument("--qb", type=str, default=None)
+    prof.add_argument("--write", action="store_true", help="Write HTML catalog under data/profiles")
+
     args = parser.parse_args(argv)
     config.ensure_dirs()
 
@@ -54,8 +68,10 @@ def main(argv: list[str] | None = None) -> int:
             start_year=args.start_year,
             end_year=args.end_year,
             include_weather=not args.no_weather,
+            include_injuries=not args.no_injuries,
             full=not args.lite,
             use_cache=not args.no_cache,
+            force=args.force,
         )
         print(json.dumps(counts, indent=2))
         return 0
@@ -85,6 +101,11 @@ def main(argv: list[str] | None = None) -> int:
         write_metrics(summary)
         print(json.dumps(summary.get("overall", {}), indent=2))
         print(f"champion={models.get('champion')} n_train={models.get('n_train')}")
+        from cfb_model.learn import run_learn
+
+        state = run_learn(scored=scored, db=False, refresh_identity=False)
+        if state.get("lessons"):
+            print("learn:", state["lessons"][0])
         return 0
 
     if args.cmd == "evaluate":
@@ -94,6 +115,23 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary.get("overall", {}), indent=2))
         print("folds:", json.dumps(summary.get("folds", []), indent=2, default=str)[:2000])
         return 0
+
+    if args.cmd == "learn":
+        from cfb_model.learn import run_learn
+
+        state = run_learn(db=True, refresh_identity=True)
+        print(json.dumps({k: state[k] for k in ("n_scored", "sigma", "bias", "injury", "lessons") if k in state}, indent=2))
+        return 0
+
+    if args.cmd == "injuries":
+        from cfb_model.injuries import ingest_injuries
+
+        n = ingest_injuries()
+        print(f"stored {n} injury rows")
+        return 0
+
+    if args.cmd == "profile":
+        return _profile(args)
 
     if args.cmd == "predict":
         return _predict(args)
@@ -128,9 +166,18 @@ def _predict(args) -> int:
             "pred_margin",
             "pred_home_wp",
             "pred_spread",
+            "spread_label",
+            "cover_side",
+            "home_qb",
+            "away_qb",
+            "home_qb_style",
+            "away_qb_style",
             "close_spread",
             "edge",
             "confidence",
+            "home_injury_note",
+            "away_injury_note",
+            "learning_applied",
             "home_margin",
             "completed",
         ]
@@ -142,6 +189,36 @@ def _predict(args) -> int:
     out.to_csv(dest, index=False)
     print(out.to_string(index=False))
     print(f"wrote {dest}")
+    return 0
+
+
+def _profile(args) -> int:
+    from cfb_model.players import build_qb_season_table, qb_card
+    from cfb_model.profiles import find_coach, find_team, format_card, load_identity, write_catalog
+    from cfb_model import store
+
+    team_table, coach_table = load_identity()
+    if args.write:
+        dest = write_catalog(team_table, coach_table, config.PROFILES_DIR, season=args.year)
+        print(f"wrote {dest}")
+    if args.team:
+        print(format_card(find_team(team_table, args.team, args.year)))
+    if args.coach:
+        print(format_card(find_coach(coach_table, args.coach, args.year)))
+    if args.qb:
+        conn = store.init_schema()
+        try:
+            stats = store.read_table(conn, "player_season_stats")
+            ppa = store.read_table(conn, "player_ppa")
+            portal = store.read_table(conn, "transfer_portal")
+            talent = store.read_table(conn, "talent")
+        finally:
+            conn.close()
+        qb_table = build_qb_season_table(stats, ppa, portal, talent)
+        print(format_card(qb_card(qb_table, args.qb, args.year)))
+    if not any([args.team, args.coach, args.qb, args.write]):
+        print("Pass --team, --coach, --qb, or --write")
+        return 1
     return 0
 
 

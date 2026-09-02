@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS games (
     home_conference TEXT,
     home_classification TEXT,
     home_points REAL,
+    home_q1 REAL,
+    home_q2 REAL,
+    home_q3 REAL,
+    home_q4 REAL,
     home_pregame_elo REAL,
     home_postgame_elo REAL,
     home_postgame_wp REAL,
@@ -24,6 +28,10 @@ CREATE TABLE IF NOT EXISTS games (
     away_conference TEXT,
     away_classification TEXT,
     away_points REAL,
+    away_q1 REAL,
+    away_q2 REAL,
+    away_q3 REAL,
+    away_q4 REAL,
     away_pregame_elo REAL,
     away_postgame_elo REAL,
     away_postgame_wp REAL,
@@ -163,6 +171,21 @@ CREATE TABLE IF NOT EXISTS sp_ratings (
     PRIMARY KEY (year, team)
 );
 
+CREATE TABLE IF NOT EXISTS fpi_ratings (
+    year INTEGER NOT NULL,
+    team TEXT NOT NULL,
+    conference TEXT,
+    fpi REAL,
+    fpi_rank INTEGER,
+    offense REAL,
+    defense REAL,
+    special_teams REAL,
+    overall_eff REAL,
+    source TEXT NOT NULL DEFAULT 'cfbd',
+    as_of TEXT,
+    PRIMARY KEY (year, team, source)
+);
+
 CREATE TABLE IF NOT EXISTS talent (
     year INTEGER NOT NULL,
     team TEXT NOT NULL,
@@ -266,6 +289,78 @@ CREATE TABLE IF NOT EXISTS weather (
     wind_speed REAL,
     indoor INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS player_season_stats (
+    season INTEGER NOT NULL,
+    player_id TEXT,
+    player TEXT NOT NULL,
+    position TEXT,
+    team TEXT NOT NULL,
+    conference TEXT,
+    category TEXT NOT NULL DEFAULT 'all',
+    games REAL,
+    attempts REAL,
+    completions REAL,
+    yards REAL,
+    touchdowns REAL,
+    interceptions REAL,
+    yards_per_attempt REAL,
+    yards_per_carry REAL,
+    rating REAL,
+    PRIMARY KEY (season, player, team, category)
+);
+
+CREATE TABLE IF NOT EXISTS player_ppa (
+    season INTEGER NOT NULL,
+    player_id TEXT,
+    player TEXT NOT NULL,
+    position TEXT,
+    team TEXT NOT NULL,
+    conference TEXT,
+    average_ppa REAL,
+    passing REAL,
+    rushing REAL,
+    usage REAL,
+    PRIMARY KEY (season, player, team)
+);
+
+CREATE TABLE IF NOT EXISTS transfer_portal (
+    season INTEGER NOT NULL,
+    player_id TEXT,
+    player TEXT NOT NULL,
+    position TEXT,
+    origin TEXT,
+    destination TEXT,
+    stars REAL,
+    eligibility TEXT,
+    transfer_date TEXT,
+    PRIMARY KEY (season, player, origin)
+);
+
+CREATE TABLE IF NOT EXISTS injury_reports (
+    snapshot_id TEXT NOT NULL,
+    as_of TEXT NOT NULL,
+    season INTEGER,
+    week INTEGER,
+    espn_team_id TEXT,
+    team TEXT,
+    team_raw TEXT NOT NULL,
+    player TEXT,
+    player_id TEXT NOT NULL,
+    position TEXT,
+    status TEXT,
+    status_weight REAL,
+    position_weight REAL,
+    load REAL,
+    report_date TEXT,
+    comment TEXT,
+    source TEXT NOT NULL DEFAULT 'espn',
+    PRIMARY KEY (snapshot_id, player_id, team_raw)
+);
+
+CREATE INDEX IF NOT EXISTS idx_injury_as_of ON injury_reports (as_of, team);
+CREATE INDEX IF NOT EXISTS idx_player_stats_team ON player_season_stats (season, team);
+CREATE INDEX IF NOT EXISTS idx_portal_season ON transfer_portal (season, destination);
 
 CREATE TABLE IF NOT EXISTS ingest_meta (
     key TEXT PRIMARY KEY,

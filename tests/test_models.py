@@ -14,7 +14,7 @@ def test_models_fit_and_beat_mean_baseline(db_path):
         conn.close()
     train = frame.loc[completed_mask(frame)]
     models = fit_models(train)
-    pred = predict_frame(models, train)
+    pred = predict_frame(models, train, apply_learning=False)
     model_mae = mean_absolute_error(train[TARGET_COL], pred["pred_margin"])
     baseline = mean_absolute_error(train[TARGET_COL], [train[TARGET_COL].mean()] * len(train))
     assert model_mae < baseline
@@ -34,5 +34,5 @@ def test_walk_forward_and_persist(db_path, tmp_path, monkeypatch):
     save_models(models, tmp_path / "models")
     loaded = load_models(tmp_path / "models")
     assert loaded["columns"] == models["columns"]
-    again = predict_frame(loaded, scored.head(5))
+    again = predict_frame(loaded, scored.head(5), apply_learning=False)
     assert "pred_margin" in again

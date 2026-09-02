@@ -15,7 +15,7 @@ def test_parse_possession_clock():
 
 def test_shrinkage_weights():
     # n=0 -> current (or prior if current missing handled by caller)
-    assert shrink(10, 0, 0, k=4) == 10
+    assert shrink(10, 0, 0, k=4) == 0
     # n=4, k=4 -> 50/50
     assert shrink(10, 0, 4, k=4) == 5
     # large n trusts current

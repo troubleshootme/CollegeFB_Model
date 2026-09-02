@@ -30,7 +30,9 @@ data/cfb.db
 data/cache/
 data/features.csv
 data/walkforward_predictions.csv
-data/predictions_*.csv
+data/learning/
+data/gamebooks/
+data/profiles/
 models/*.pkl
 *.egg-info/
 .coverage

@@ -21,6 +21,8 @@ def db_path(tmp_path, monkeypatch):
     monkeypatch.setattr("cfb_model.config.DB_PATH", path)
     monkeypatch.setattr("cfb_model.config.MODELS_DIR", tmp_path / "models")
     monkeypatch.setattr("cfb_model.config.DATA_DIR", tmp_path)
+    monkeypatch.setattr("cfb_model.config.LEARNING_DIR", tmp_path / "learning")
+    (tmp_path / "learning").mkdir(parents=True, exist_ok=True)
     conn = store.init_schema(store.connect(path))
     seed_warehouse(conn)
     conn.close()

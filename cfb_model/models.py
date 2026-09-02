@@ -78,7 +78,7 @@ def fit_models(train: pd.DataFrame, columns: list[str] | None = None) -> dict:
     return {"ridge": ridge, "xgb": xgb, "columns": cols, "sigma": sigma, "imputer": imputer}
 
 
-def predict_frame(models: dict, frame: pd.DataFrame) -> pd.DataFrame:
+def predict_frame(models: dict, frame: pd.DataFrame, *, apply_learning: bool = True) -> pd.DataFrame:
     out = frame.copy()
     X, _ = matrix(out, models["columns"])
     X = X.reindex(columns=models["columns"])
@@ -88,7 +88,14 @@ def predict_frame(models: dict, frame: pd.DataFrame) -> pd.DataFrame:
     champion = models.get("champion", "xgb")
     out["pred_margin"] = out[f"pred_margin_{champion}"]
     sigma = float(models.get("sigma") or config.DEFAULT_MARGIN_SIGMA)
-    out["pred_home_wp"] = norm.cdf(out["pred_margin"] / sigma)
+    if apply_learning:
+        from cfb_model.learn import apply_state, log_predictions
+
+        injury_prior = "qb_out_points_diff" not in (models.get("columns") or [])
+        out = apply_state(out, injury_prior=injury_prior)
+        sigma = float((__import__("cfb_model.learn", fromlist=["load_state"]).load_state()).get("sigma") or sigma)
+        log_predictions(out)
+    out["pred_home_wp"] = norm.cdf(pd.to_numeric(out["pred_margin"], errors="coerce") / sigma)
     out["pred_spread"] = -out["pred_margin"]
     close = pd.to_numeric(out.get("close_spread"), errors="coerce")
     implied = -close
@@ -96,6 +103,33 @@ def predict_frame(models: dict, frame: pd.DataFrame) -> pd.DataFrame:
     out["edge"] = out["pred_margin"] - implied
     out["confidence"] = (out["edge"].abs() / sigma).replace([np.inf, -np.inf], np.nan)
     out["baseline_elo_margin"] = pd.to_numeric(out.get("elo_diff"), errors="coerce") / config.ELO_MARGIN_SCALE
+    out = annotate_board(out)
+    return out
+
+
+def annotate_board(frame: pd.DataFrame) -> pd.DataFrame:
+    """Print the market as the favorite's line (SMU -3), not the raw home spread."""
+    out = frame.copy()
+    close = pd.to_numeric(out.get("close_spread"), errors="coerce")
+    pred = pd.to_numeric(out.get("pred_margin"), errors="coerce")
+    home = out.get("home_team", pd.Series("", index=out.index)).astype(str)
+    away = out.get("away_team", pd.Series("", index=out.index)).astype(str)
+
+    def _label(h: str, a: str, spread: float) -> str | None:
+        if spread is None or not np.isfinite(spread):
+            return None
+        if abs(float(spread)) < 1e-9:
+            return "pick'em"
+        mag = abs(float(spread))
+        mag_s = str(int(mag)) if mag == int(mag) else f"{mag:.2f}".rstrip("0").rstrip(".")
+        if spread < 0:
+            return f"{h} -{mag_s}"
+        return f"{a} -{mag_s}"
+
+    out["spread_label"] = [_label(h, a, s) for h, a, s in zip(home, away, close)]
+    out["pick"] = np.where(pred > 0, home, np.where(pred < 0, away, "toss-up"))
+    cover = pred + close
+    out["cover_side"] = np.where(cover > 0, home, np.where(cover < 0, away, "push"))
     return out
 
 
