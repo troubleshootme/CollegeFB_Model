@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.schemas import JobStartRequest, MatchupRequest
 from src.config import CORS_ORIGINS, END_YEAR, MODELS_DIR, load_env
 from src.jobs import JobConflict, get_job, list_jobs, start_job
+from src.weekly import start_weekly_poller, stop_weekly_poller
 from src.simulate import (
     get_feature_frame,
     load_models,
@@ -30,7 +31,9 @@ async def lifespan(_app: FastAPI):
         _load_team_directory(refresh_if_empty=True)
     except Exception:
         pass
+    start_weekly_poller()
     yield
+    stop_weekly_poller()
 
 
 app = FastAPI(
@@ -257,8 +260,7 @@ def job_detail(job_id: str) -> dict[str, Any]:
 def create_job(kind: str, body: JobStartRequest | None = None) -> dict[str, Any]:
     if kind not in {"collect", "weather", "train", "pipeline"}:
         raise HTTPException(status_code=404, detail="Unknown job kind")
-    holdout = body.holdout_season if body else None
     try:
-        return start_job(kind, holdout_season=holdout)
+        return start_job(kind)
     except JobConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

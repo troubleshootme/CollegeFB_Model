@@ -41,8 +41,8 @@ export const getMetrics = () => api("/api/metrics");
 export const getImportance = () => api("/api/metrics/importance");
 export const getJobs = () => api("/api/jobs");
 export const getJob = (id) => api(`/api/jobs/${id}`);
-export const startJob = (kind, holdout_season) =>
+export const startJob = (kind) =>
   api(`/api/jobs/${kind}`, {
     method: "POST",
-    body: JSON.stringify(holdout_season ? { holdout_season } : {}),
+    body: JSON.stringify({}),
   });

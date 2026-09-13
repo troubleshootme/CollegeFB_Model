@@ -98,7 +98,11 @@ def score_slate(slate: pd.DataFrame, models: dict[str, Any] | None = None) -> pd
     margin = packed["margin"]
     win = packed["win"]
     ats = packed["ats"]
-    out["pred_margin"] = margin["model"].predict(model_matrix(out, margin["features"]))
+    out["pred_margin_raw"] = margin["model"].predict(model_matrix(out, margin["features"]))
+    out["pred_margin"] = out["pred_margin_raw"]
+    from src.weekly import apply_week_layer, log_predictions
+
+    out = apply_week_layer(out)
     out["pred_home_win_prob"] = win["model"].predict_proba(model_matrix(out, win["features"]))[:, 1]
     totals = pd.to_numeric(out["over_under"], errors="coerce") if "over_under" in out.columns else pd.Series(np.nan, index=out.index)
     out["pred_home_points"] = totals / 2.0 + out["pred_margin"] / 2.0
@@ -109,7 +113,12 @@ def score_slate(slate: pd.DataFrame, models: dict[str, Any] | None = None) -> pd
     lined = out.loc[spread.notna()]
     if not lined.empty:
         out.loc[lined.index, "ats_edge"] = ats["model"].predict(model_matrix(lined, ats["features"]))
-    return annotate_board(out)
+    scored = annotate_board(out)
+    if "completed" in scored.columns and "game_id" in scored.columns:
+        pending = scored[~scored["completed"].astype(bool)]
+        if not pending.empty:
+            log_predictions(pending)
+    return scored
 
 
 def _team_rows(frame: pd.DataFrame, team: str) -> pd.DataFrame:

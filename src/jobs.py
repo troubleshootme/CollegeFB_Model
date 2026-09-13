@@ -130,7 +130,6 @@ def start_job(
     kind: str,
     extra_args: list[str] | None = None,
     command: list[str] | None = None,
-    holdout_season: int | None = None,
 ) -> dict[str, Any]:
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     active = running_job()
@@ -140,8 +139,6 @@ def start_job(
         if kind not in PIPELINE_FLAGS:
             raise ValueError(f"unknown job kind {kind!r}")
         command = [sys.executable, str(ROOT / "run_pipeline.py"), *PIPELINE_FLAGS[kind]]
-        if holdout_season is not None:
-            command.extend(["--holdout-season", str(holdout_season)])
         if extra_args:
             command.extend(extra_args)
     job_id = uuid.uuid4().hex[:12]

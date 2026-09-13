@@ -453,6 +453,24 @@ def _latest_teams(fbs_teams: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def refresh_live_games(today: date | None = None) -> int:
+    """Pull current-season `/games` only so weekly finals land without a full collect."""
+    years = sorted(live_seasons(today))
+    if not years:
+        return 0
+    games_new = _concat([fetch_games(year) for year in years])
+    if games_new is None or games_new.empty:
+        return 0
+    with sqlite3.connect(DB_PATH) as con:
+        games = merge_year_frames(_read_table(con, "games"), games_new, "season", years)
+        _write_table(con, "games", games)
+        con.execute("CREATE INDEX IF NOT EXISTS ix_games_id ON games(game_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_games_season ON games(season, week)")
+        con.commit()
+    print(f"live games refresh: {len(games_new):,} rows for {years}")
+    return int(len(games_new))
+
+
 def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
     with sqlite3.connect(DB_PATH) as con:
         existing = stored_seasons(con)

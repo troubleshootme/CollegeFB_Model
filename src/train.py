@@ -129,7 +129,7 @@ def _hgb_regressor() -> HistGradientBoostingRegressor:
     )
 
 
-def train(holdout_season: int = 2025) -> dict:
+def train() -> dict:
     MODELS_DIR.mkdir(exist_ok=True)
     print("Building features from SQLite...")
     frame = build_feature_frame()
@@ -144,29 +144,36 @@ def train(holdout_season: int = 2025) -> dict:
     upcoming = frame[
         ~frame["completed"].astype(bool)
         & frame["fbs_vs_fbs"].astype(bool)
-        & (frame["season"] >= holdout_season)
     ].copy()
 
     feature_cols = [col for col in FEATURE_COLS if col in completed.columns]
     market_cols = [col for col in feature_cols + MARKET_COLS if col in completed.columns]
-    train_df = completed[completed["season"] < holdout_season]
-    test_df = completed[completed["season"] == holdout_season]
+    train_df = completed
     if train_df.empty:
         raise RuntimeError("No completed training games found. Run data collection first.")
-    if test_df.empty:
-        # If 2025 is missing, hold out the latest completed season.
-        holdout_season = int(completed["season"].max())
-        train_df = completed[completed["season"] < holdout_season]
-        test_df = completed[completed["season"] == holdout_season]
+    from src.weekly import completed_weeks, record_base_catchup
+
+    finished = completed_weeks(completed)
+    if finished:
+        eval_season, eval_week = finished[-1]
+        eval_df = completed[
+            (completed["season"] == eval_season) & (completed["week"] == eval_week)
+        ].copy()
+    else:
+        eval_season = int(train_df["season"].max())
+        eval_week = int(train_df["week"].max()) if "week" in train_df.columns else 1
+        eval_df = train_df.tail(min(800, len(train_df))).copy()
+    if eval_df.empty:
+        eval_df = train_df.tail(min(800, len(train_df))).copy()
 
     x_train = model_matrix(train_df, feature_cols)
-    x_test = model_matrix(test_df, feature_cols)
+    x_eval = model_matrix(eval_df, feature_cols)
     x_train_mkt = model_matrix(train_df, market_cols)
-    x_test_mkt = model_matrix(test_df, market_cols)
+    x_eval_mkt = model_matrix(eval_df, market_cols)
     y_train = train_df["margin"].astype(float)
-    y_test = test_df["margin"].astype(float)
+    y_eval = eval_df["margin"].astype(float)
 
-    print(f"Training HGB on {len(train_df):,} games, holdout {holdout_season} n={len(test_df):,}")
+    print(f"Training HGB on {len(train_df):,} completed games (eval week {eval_season} w{eval_week} n={len(eval_df):,})")
     hgb = _hgb_regressor()
     hgb.fit(x_train, y_train)
     hgb_mkt = _hgb_regressor()
@@ -175,9 +182,9 @@ def train(holdout_season: int = 2025) -> dict:
     ridge = _ridge()
     ridge.fit(x_train, y_train)
 
-    hgb_pred = hgb.predict(x_test)
-    hgb_mkt_pred = hgb_mkt.predict(x_test_mkt)
-    ridge_pred = ridge.predict(x_test)
+    hgb_pred = hgb.predict(x_eval)
+    hgb_mkt_pred = hgb_mkt.predict(x_eval_mkt)
+    ridge_pred = ridge.predict(x_eval)
 
     win_model = HistGradientBoostingClassifier(
         max_depth=6,
@@ -188,45 +195,57 @@ def train(holdout_season: int = 2025) -> dict:
         random_state=42,
     )
     y_win_train = (train_df["home_points"] > train_df["away_points"]).astype(int)
-    y_win_test = (test_df["home_points"] > test_df["away_points"]).astype(int)
+    y_win_eval = (eval_df["home_points"] > eval_df["away_points"]).astype(int)
     win_model.fit(x_train, y_win_train)
-    win_proba = win_model.predict_proba(x_test)[:, 1]
+    win_proba = win_model.predict_proba(x_eval)[:, 1]
 
     print("Fitting ATS residual model...")
     ats_cols = [col for col in feature_cols + ["spread"] if col in train_df.columns]
     ats_train = train_df[train_df["spread"].notna() & train_df["margin"].notna()].copy()
-    ats_test = test_df[test_df["spread"].notna() & test_df["margin"].notna()].copy()
+    ats_eval = eval_df[eval_df["spread"].notna() & eval_df["margin"].notna()].copy()
     y_ats_train = ats_train["margin"].astype(float) + ats_train["spread"].astype(float)
-    y_ats_test = ats_test["margin"].astype(float) + ats_test["spread"].astype(float)
+    y_ats_eval = ats_eval["margin"].astype(float) + ats_eval["spread"].astype(float)
     ats_model = _hgb_regressor()
     ats_model.fit(model_matrix(ats_train, ats_cols), y_ats_train)
-    ats_pred = ats_model.predict(model_matrix(ats_test, ats_cols))
-    ats_holdout = _ats_threshold_metrics(y_ats_test.to_numpy(), ats_pred)
-    margin_edge = hgb_pred + test_df["spread"].to_numpy()
+    ats_pred = ats_model.predict(model_matrix(ats_eval, ats_cols)) if not ats_eval.empty else np.array([])
+    ats_eval_metrics = _ats_threshold_metrics(y_ats_eval.to_numpy(), ats_pred) if not ats_eval.empty else {"n": 0}
+    margin_edge = hgb_pred + eval_df["spread"].to_numpy()
     ats_from_margin = _ats_threshold_metrics(
-        (test_df["margin"].astype(float) + test_df["spread"].astype(float)).to_numpy(),
+        (eval_df["margin"].astype(float) + eval_df["spread"].astype(float)).to_numpy(),
         np.asarray(margin_edge, dtype=float),
     )
 
+    hgb_metrics = _metrics(y_eval, hgb_pred, eval_df["spread"])
     results = {
-        "holdout_season": holdout_season,
         "train_seasons": f"{int(train_df['season'].min())}-{int(train_df['season'].max())}",
         "train_games": int(len(train_df)),
-        "test_games": int(len(test_df)),
+        "eval_season": int(eval_season),
+        "eval_week": int(eval_week),
+        "eval_games": int(len(eval_df)),
         "features": feature_cols,
-        "hgb_margin": _metrics(y_test, hgb_pred, test_df["spread"]),
-        "hgb_with_market": _metrics(y_test, hgb_mkt_pred, test_df["spread"]),
-        "ridge_margin": _metrics(y_test, ridge_pred, test_df["spread"]),
+        "hgb_margin": hgb_metrics,
+        "hgb_with_market": _metrics(y_eval, hgb_mkt_pred, eval_df["spread"]),
+        "ridge_margin": _metrics(y_eval, ridge_pred, eval_df["spread"]),
         "hgb_win": {
-            "accuracy": round(float(accuracy_score(y_win_test, (win_proba >= 0.5).astype(int))), 4),
-            "brier": round(float(brier_score_loss(y_win_test, win_proba)), 4),
-            "log_loss": round(float(log_loss(y_win_test, np.clip(win_proba, 1e-6, 1 - 1e-6))), 4),
+            "accuracy": round(float(accuracy_score(y_win_eval, (win_proba >= 0.5).astype(int))), 4),
+            "brier": round(float(brier_score_loss(y_win_eval, np.clip(win_proba, 1e-6, 1 - 1e-6))), 4),
+            "log_loss": round(
+                float(log_loss(y_win_eval, np.clip(win_proba, 1e-6, 1 - 1e-6), labels=[0, 1])),
+                4,
+            ),
         },
-        "ats_residual": ats_holdout,
+        "ats_residual": ats_eval_metrics,
         "ats_from_margin_model": ats_from_margin,
+        "latest_week": {
+            "season": int(eval_season),
+            "week": int(eval_week),
+            "n": int(len(eval_df)),
+            "mae_base": hgb_metrics.get("mae"),
+            "winner_accuracy": hgb_metrics.get("winner_accuracy"),
+        },
         "weather_coverage": {
             "train": round(float(train_df["wx_temp_max"].notna().mean()), 3) if "wx_temp_max" in train_df.columns else 0,
-            "test": round(float(test_df["wx_temp_max"].notna().mean()), 3) if "wx_temp_max" in test_df.columns else 0,
+            "eval": round(float(eval_df["wx_temp_max"].notna().mean()), 3) if "wx_temp_max" in eval_df.columns else 0,
         },
     }
 
@@ -265,8 +284,8 @@ def train(holdout_season: int = 2025) -> dict:
     print("Computing permutation importance...")
     perm = permutation_importance(
         hgb,
-        x_test,
-        y_test,
+        x_eval,
+        y_eval,
         n_repeats=4,
         random_state=42,
         scoring="neg_mean_absolute_error",
@@ -278,7 +297,7 @@ def train(holdout_season: int = 2025) -> dict:
         }
     ).sort_values("importance", ascending=False)
 
-    test_out = test_df[
+    test_out = eval_df[
         ["season", "week", "start_date", "home_team", "away_team", "home_points", "away_points", "margin", "spread", "over_under"]
     ].copy()
     test_out["pred_margin"] = hgb_pred
@@ -287,9 +306,9 @@ def train(holdout_season: int = 2025) -> dict:
     test_out["ridge_margin"] = ridge_pred
     test_out["edge_vs_spread"] = test_out["pred_margin"] + test_out["spread"]
     test_out["ats_edge"] = np.nan
-    if not ats_test.empty:
-        test_out.loc[ats_test.index, "ats_edge"] = ats_pred
-    test_out.to_csv(MODELS_DIR / f"holdout_{holdout_season}_predictions.csv", index=False)
+    if not ats_eval.empty:
+        test_out.loc[ats_eval.index, "ats_edge"] = ats_pred
+    test_out.to_csv(MODELS_DIR / f"eval_{eval_season}_w{eval_week}_predictions.csv", index=False)
 
     if not upcoming.empty:
         upcoming_x = model_matrix(upcoming, feature_cols)
@@ -344,11 +363,7 @@ def train(holdout_season: int = 2025) -> dict:
         upcoming_out = annotate_board(upcoming_out.sort_values(["season", "week", "start_date"]))
         upcoming_out.to_csv(MODELS_DIR / "upcoming_predictions.csv", index=False)
         results["upcoming_games"] = int(len(upcoming_out))
-        week1 = upcoming_out[
-            (upcoming_out["season"] == holdout_season + 1) & (upcoming_out["week"] == 1) & upcoming_out["spread"].notna()
-        ]
-        if week1.empty:
-            week1 = upcoming_out[(upcoming_out["week"] == 1) & upcoming_out["spread"].notna()]
+        week1 = upcoming_out[(upcoming_out["week"] == 1) & upcoming_out["spread"].notna()]
         if not week1.empty:
             season = int(week1["season"].iloc[0])
             week1.to_csv(MODELS_DIR / f"week1_{season}.csv", index=False)
@@ -363,6 +378,7 @@ def train(holdout_season: int = 2025) -> dict:
     joblib.dump({"model": ats_model, "features": ats_cols, "kind": "ats_residual"}, MODELS_DIR / "ats_residual.joblib")
     importance.to_csv(MODELS_DIR / "feature_importance.csv", index=False)
     (MODELS_DIR / "metrics.json").write_text(json.dumps(results, indent=2, default=str))
+    record_base_catchup(completed)
     print(json.dumps({k: v for k, v in results.items() if k != "features"}, indent=2))
     print(f"Saved artifacts in {MODELS_DIR}")
     return results

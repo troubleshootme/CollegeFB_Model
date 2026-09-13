@@ -24,7 +24,6 @@ def main() -> None:
     parser.add_argument("--skip-collect", action="store_true")
     parser.add_argument("--skip-weather", action="store_true")
     parser.add_argument("--skip-train", action="store_true")
-    parser.add_argument("--holdout-season", type=int, default=2025)
     args = parser.parse_args()
 
     if not args.skip_collect:
@@ -32,7 +31,7 @@ def main() -> None:
     if not args.skip_weather:
         fetch_weather()
     if not args.skip_train:
-        train(args.holdout_season)
+        train()
 
 
 if __name__ == "__main__":

@@ -26,7 +26,9 @@ collegeFootball.db
 models/*.pkl
 models/*.joblib
 models/*.csv
+models/*.jsonl
 models/metrics.json
+models/weekly.json
 models/jobs/
 
 web/node_modules/

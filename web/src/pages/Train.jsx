@@ -7,7 +7,6 @@ export default function Train() {
   const [jobs, setJobs] = useState([]);
   const [active, setActive] = useState(null);
   const [error, setError] = useState("");
-  const [holdout, setHoldout] = useState("2025");
 
   async function refresh() {
     const [m, i, j] = await Promise.all([getMetrics(), getImportance(), getJobs()]);
@@ -43,13 +42,14 @@ export default function Train() {
   async function run(kind) {
     setError("");
     try {
-      const job = await startJob(kind, holdout ? Number(holdout) : undefined);
+      const job = await startJob(kind);
       setActive(job);
     } catch (err) {
       setError(err.message);
     }
   }
 
+  const latest = metrics?.metrics?.latest_week || {};
   const hgb = metrics?.metrics?.hgb_margin || {};
   const ats = metrics?.metrics?.ats_from_margin_model?.ats_ge_0 || {};
   const maxImp = Math.max(...importance.map((row) => Math.abs(row.importance || 0)), 0.0001);
@@ -57,18 +57,15 @@ export default function Train() {
   return (
     <section>
       <p className="kicker">Keep the board honest</p>
-      <h1>Retrain on latest games</h1>
+      <h1>Train on completed games</h1>
       <p className="lede">
-        Collect refreshes only the live season on CFBD. Past seasons already in the database are not
-        re-fetched. Weather fills stadium forecasts. Train fits the margin, win, and ATS models. Only one
-        job runs at a time.
+        Collect refreshes only the live season on CFBD. After every FBS game in a week is
+        final, the board trains a correction on that week&apos;s picks versus the scores. The
+        trees are not refit from scratch each week. Train rebuilds the frozen base from all
+        completed games. Only one job runs at a time.
       </p>
       {error && <p className="error">{error}</p>}
       <div className="toolbar">
-        <label className="field">
-          Holdout season
-          <input value={holdout} onChange={(event) => setHoldout(event.target.value)} />
-        </label>
         <button className="btn ghost" type="button" onClick={() => run("collect")}>
           Collect
         </button>
@@ -85,17 +82,17 @@ export default function Train() {
       {!metrics?.ready && (
         <div className="empty">
           <h2>No metrics yet</h2>
-          <p>Run training after the SQLite database has games. Holdout defaults to 2025.</p>
+          <p>Run training after the SQLite database has games. Weekly updates run automatically once finals are in.</p>
         </div>
       )}
       {metrics?.ready && (
         <div className="metrics">
           <div className="metric">
-            <b>{hgb.winner_accuracy ?? "—"}</b>
-            <span>Holdout winner acc</span>
+            <b>{latest.winner_accuracy ?? hgb.winner_accuracy ?? "—"}</b>
+            <span>Latest week winner acc</span>
           </div>
           <div className="metric">
-            <b>{hgb.mae ?? "—"}</b>
+            <b>{latest.mae_adjusted ?? latest.mae_base ?? hgb.mae ?? "—"}</b>
             <span>Margin MAE</span>
           </div>
           <div className="metric">

@@ -64,7 +64,7 @@ def main() -> None:
         hgb = metrics.get("hgb_margin") or {}
         ats = (metrics.get("ats_from_margin_model") or {}).get("ats_ge_0") or {}
         print(
-            f"Holdout winner acc {hgb.get('winner_accuracy')} MAE {hgb.get('mae')} "
+            f"Eval winner acc {hgb.get('winner_accuracy')} MAE {hgb.get('mae')} "
             f"(market MAE {hgb.get('market_mae')}); margin-model ATS {ats.get('accuracy')} n={ats.get('n')}"
         )
 
