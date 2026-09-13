@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import time
 
-from src.jobs import JobConflict, get_job, start_job
+from src.jobs import PIPELINE_FLAGS, JobConflict, get_job, start_job
 
 
 def test_start_job_runs_command_and_records_success(tmp_path, monkeypatch):
@@ -33,3 +34,27 @@ def test_rejects_second_job_while_one_is_running(tmp_path, monkeypatch):
     while current["status"] == "running" and time.time() < deadline:
         time.sleep(0.05)
         current = get_job(first["id"])
+
+
+def test_train_job_command_has_no_holdout_flag(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.jobs.JOBS_DIR", tmp_path)
+    captured = {}
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        return _FakeProc()
+
+    monkeypatch.setattr("src.jobs.subprocess.Popen", fake_popen)
+    start_job("train")
+    command = captured["command"]
+    assert "--holdout-season" not in command
+    assert "holdout_season" not in inspect.signature(start_job).parameters
+    assert PIPELINE_FLAGS["train"] == ["--skip-collect", "--skip-weather"]
+
+
+class _FakeProc:
+    pid = 12345
+
+    def wait(self):
+        return 0
+

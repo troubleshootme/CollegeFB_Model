@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
+
+os.environ.setdefault("WEEKLY_AUTOTRAIN", "0")
 
 import pandas as pd
 import pytest

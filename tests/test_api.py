@@ -29,6 +29,21 @@ def _team(name, color, logo):
     }
 
 
+def test_create_train_job_does_not_pass_holdout(client, monkeypatch):
+    seen = {}
+
+    def fake_start(kind, **kwargs):
+        seen["kind"] = kind
+        seen["kwargs"] = kwargs
+        return {"id": "abc", "kind": kind, "status": "queued", "log": ""}
+
+    monkeypatch.setattr("app.main.start_job", fake_start)
+    response = client.post("/api/jobs/train", json={})
+    assert response.status_code == 200
+    assert seen["kind"] == "train"
+    assert "holdout_season" not in seen["kwargs"]
+
+
 def test_health_ok(client):
     response = client.get("/api/health")
     assert response.status_code == 200
