@@ -1,0 +1,11 @@
+# Separate virtualenv for the experimental `python -m cfb_model` package.
+# `cfbd` pins pydantic<2, which conflicts with requirements.txt (FastAPI / pydantic>=2).
+cfbd>=5.24.0,<6
+pandas>=2.0
+numpy>=1.26
+scikit-learn>=1.4
+xgboost>=2.0
+scipy>=1.11
+python-dotenv>=1.0
+requests>=2.31
+pytest>=8.0
