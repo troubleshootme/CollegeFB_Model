@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
@@ -21,9 +22,11 @@ from sklearn.metrics import (
     mean_squared_error,
 )
 
-from src.config import MODELS_DIR
+from src import quarters as Q
+from src.config import DB_PATH, MODELS_DIR
 from src.ensemble import BlendRegressor, MarginWinClassifier, make_hgb, make_ridge
 from src.features import FEATURE_COLS, MARKET_COLS, build_feature_frame, model_matrix
+from src.linescores import QUARTER_COLS, load_line_scores
 
 
 ATS_THRESHOLDS = (0, 3, 5, 7)
@@ -175,6 +178,58 @@ def _fit_all(df: pd.DataFrame, feature_cols: list[str], market_cols: list[str], 
     return margin, market, win, ats
 
 
+def _quarter_frame(completed: pd.DataFrame) -> pd.DataFrame | None:
+    """Completed games with quarter scores and a pre-game market (margin = -spread, total = over/under)."""
+    with sqlite3.connect(DB_PATH) as con:
+        lines = load_line_scores(con)
+    if lines.empty:
+        return None
+    lines = lines.drop(columns=[c for c in ("season", "completed") if c in lines.columns])
+    d = completed.merge(lines, on="game_id", how="inner")
+    d = d[d["spread"].notna() & d["over_under"].notna()].copy()
+    for side in ("home", "away"):
+        regulation = d[[f"{side}_q{q}" for q in Q.QUARTERS]].sum(axis=1) + d[f"{side}_ot"].fillna(0)
+        d = d[(regulation - d[f"{side}_points"]).abs() < 0.01]  # drop the few rows whose quarters do not add up
+    d["exp_margin"] = -d["spread"].astype(float)
+    d["exp_total"] = d["over_under"].astype(float)
+    return d
+
+
+def _evaluate_quarters(model: Q.QuarterModel, test: pd.DataFrame, train: pd.DataFrame) -> dict:
+    """Holdout quality of the quarter model against simple baselines."""
+    nll, n = Q.quarter_nll(model, Q._grouped_counts(test, model))
+    empirical = 0.0
+    count = 0
+    for q in Q.QUARTERS:
+        tv = np.r_[train[f"home_q{q}"], train[f"away_q{q}"]].astype(int)
+        pmf = np.bincount(np.clip(tv, 0, Q.MAX_Q), minlength=Q.MAX_Q + 1) + 0.5
+        pmf = pmf / pmf.sum()
+        ov = np.clip(np.r_[test[f"home_q{q}"], test[f"away_q{q}"]].astype(int), 0, Q.MAX_Q)
+        empirical -= float(np.log(pmf[ov]).sum())
+        count += len(ov)
+    margin = test["exp_margin"].to_numpy(dtype=float)
+    hp, ap = Q.expected_team_points(test["exp_total"].to_numpy(dtype=float), margin)
+    home_q, away_q = Q.expected_quarter_means(model, hp, ap, margin)
+    actual_h = test[[f"home_q{q}" for q in Q.QUARTERS]].to_numpy(dtype=float)
+    actual_a = test[[f"away_q{q}" for q in Q.QUARTERS]].to_numpy(dtype=float)
+    half_total_actual = actual_h[:, :2].sum(1) + actual_a[:, :2].sum(1)
+    half_total_model = home_q[:, :2].sum(1) + away_q[:, :2].sum(1)
+    half_total_flat = (hp + ap) / 2.0
+    return {
+        "test_games": int(len(test)),
+        "nll_per_team_quarter": round(nll / n, 4),
+        "baseline_empirical_pmf_nll": round(empirical / count, 4),
+        "quarter_points_mae": round(float(np.abs(np.r_[home_q, away_q] - np.r_[actual_h, actual_a]).mean()), 3),
+        "quarter_points_mae_flat_25pct": round(
+            float(np.abs(np.r_[np.repeat(hp[:, None] / 4, 4, 1), np.repeat(ap[:, None] / 4, 4, 1)] - np.r_[actual_h, actual_a]).mean()), 3
+        ),
+        "halftime_total_mae": round(float(np.abs(half_total_model - half_total_actual).mean()), 3),
+        "halftime_total_mae_flat_50pct": round(float(np.abs(half_total_flat - half_total_actual).mean()), 3),
+        "halftime_total_bias": round(float((half_total_model - half_total_actual).mean()), 3),
+        "halftime_total_bias_flat_50pct": round(float((half_total_flat - half_total_actual).mean()), 3),
+    }
+
+
 def train(holdout_season: int | None = None) -> dict:
     MODELS_DIR.mkdir(exist_ok=True)
     print("Building features from SQLite...")
@@ -258,6 +313,25 @@ def train(holdout_season: int | None = None) -> dict:
             "test": round(float(test_df["wx_temp_max"].notna().mean()), 3) if "wx_temp_max" in test_df.columns else 0,
         },
     }
+
+    qframe = _quarter_frame(completed)
+    quarter_model = None
+    if qframe is not None and len(qframe) >= 1000:
+        print(f"Fitting quarter model ({len(qframe):,} games with quarter scores)...")
+        q_train = qframe[qframe["season"] < holdout_season]
+        q_test = qframe[qframe["season"] == holdout_season]
+        if len(q_train) >= 1000 and not q_test.empty:
+            results["quarter_model"] = _evaluate_quarters(Q.fit(q_train), q_test, q_train)
+        quarter_model = Q.fit(qframe)
+        results["quarter_model_fit"] = {
+            "games": int(len(qframe)),
+            "seasons": f"{int(qframe['season'].min())}-{int(qframe['season'].max())}",
+            "sigma_margin": round(quarter_model.sigma_margin, 2),
+            "sigma_total": round(quarter_model.sigma_total, 2),
+            "fg_gamma": round(quarter_model.fg_gamma, 3),
+        }
+    else:
+        print("No quarter scores in the database: run Collect to fetch them. Skipping quarter model.")
 
     print("Walk-forward evaluation (same models and hyperparameters as shipped)...")
     walk: dict = {}
@@ -367,6 +441,8 @@ def train(holdout_season: int | None = None) -> dict:
     _atomic_dump(_pack(make_ridge().fit(model_matrix(completed, feature_cols), completed["margin"].astype(float)), feature_cols, "margin_ridge"), MODELS_DIR / "margin_ridge.joblib")
     _atomic_dump(_pack(win_model, feature_cols, "win_margin_logistic"), MODELS_DIR / "win_hgb.joblib")
     _atomic_dump(_pack(ats_model, ats_cols, "ats_residual"), MODELS_DIR / "ats_residual.joblib")
+    if quarter_model is not None:
+        quarter_model.save(MODELS_DIR)
     importance.to_csv(MODELS_DIR / "feature_importance.csv", index=False)
     (MODELS_DIR / "metrics.json").write_text(json.dumps(results, indent=2, default=str))
     print(json.dumps({k: v for k, v in results.items() if k != "features"}, indent=2))

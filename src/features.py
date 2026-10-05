@@ -84,6 +84,12 @@ FEATURE_COLS = [
     "away_def_success_prior",
     "wx_temp_max",
     "wx_temp_min",
+    # Opponent-adjusted form (differences only: the 12-column version scored the same):
+    # margin vs what pregame Elo expected, and strength of recent opposition.
+    "mov_x_l4_diff",
+    "mov_x_l8_diff",
+    "mov_x_season_diff",
+    "sos_l4_diff",
 ]
 
 MARKET_COLS = ["spread", "over_under"]
@@ -621,7 +627,71 @@ def build_feature_frame(con: sqlite3.Connection | None = None) -> pd.DataFrame:
     frame["elo_diff"] = _to_float(frame["home_pregame_elo"]) - _to_float(frame["away_pregame_elo"])
     frame["conference_game"] = frame["conference_game"].astype("float")
     frame["neutral_site"] = frame["neutral_site"].astype("float")
+    frame = add_opponent_adjusted_form(frame)
     return _attach_weather(frame, weather)
+
+
+# Expected home margin from pregame Elo, OLS on non-neutral FBS games 2016-2025:
+# margin ~ 3.3 (home field) + 0.0428 * elo_diff. Neutral sites keep ~0.9 of home field, taken as 0.
+ELO_POINTS_PER_POINT = 0.0428
+HOME_FIELD_POINTS = 3.3
+ADJUSTED_FORM_FIELDS = ["mov_x_l4", "mov_x_l8", "mov_x_season", "sos_l4"]
+
+
+def add_opponent_adjusted_form(frame: pd.DataFrame) -> pd.DataFrame:
+    """Level-of-competition aware form.
+
+    Beating team A by 14 is not beating team B by 14, so the raw rolling points/yards above
+    are not enough. For every past game we measure ``margin - Elo-expected margin``
+    (positive = did better than the opponent's quality predicted), then average it over the
+    team's last 4 / 8 games and this season; ``sos_l4`` is the mean pregame Elo of the last
+    four opponents. Everything is shifted by one game, so only earlier games feed a game.
+    """
+    out = frame.copy()
+    needed = {"game_id", "start_date", "home_team", "away_team", "home_points", "away_points", "elo_diff", "neutral_site"}
+    if not needed.issubset(out.columns):
+        for side in ("home", "away"):
+            for name in ADJUSTED_FORM_FIELDS:
+                out[f"{side}_{name}"] = np.nan
+        for name in ADJUSTED_FORM_FIELDS:
+            out[f"{name}_diff"] = np.nan
+        return out
+    start = pd.to_datetime(out["start_date"], utc=True, errors="coerce")
+    elo_diff = _to_float(out["elo_diff"])
+    neutral = _to_float(out["neutral_site"]).fillna(0)
+    expected = ELO_POINTS_PER_POINT * elo_diff + HOME_FIELD_POINTS * (1.0 - neutral)
+    margin = _to_float(out["home_points"]) - _to_float(out["away_points"])
+    mov_x = margin - expected
+    parts = []
+    for side, sign, opp_elo in (("home", 1.0, "away_pregame_elo"), ("away", -1.0, "home_pregame_elo")):
+        parts.append(
+            pd.DataFrame(
+                {
+                    "game_id": out["game_id"].to_numpy(),
+                    "side": side,
+                    "team": out[f"{side}_team"].to_numpy(),
+                    "start": start.to_numpy(),
+                    "season": _to_float(out["season"]).to_numpy() if "season" in out.columns else np.nan,
+                    "mov_x": (sign * mov_x).to_numpy(),
+                    "opp_elo": _to_float(out[opp_elo]).to_numpy() if opp_elo in out.columns else np.nan,
+                }
+            )
+        )
+    panel = pd.concat(parts, ignore_index=True).sort_values(["team", "start", "game_id"], kind="stable")
+    by_team = panel.groupby("team", sort=False)
+    panel["mov_x_l4"] = by_team["mov_x"].transform(lambda x: x.shift(1).rolling(4, min_periods=1).mean())
+    panel["mov_x_l8"] = by_team["mov_x"].transform(lambda x: x.shift(1).rolling(8, min_periods=1).mean())
+    panel["sos_l4"] = by_team["opp_elo"].transform(lambda x: x.shift(1).rolling(4, min_periods=1).mean())
+    panel["mov_x_season"] = panel.groupby(["team", "season"], sort=False)["mov_x"].transform(
+        lambda x: x.shift(1).expanding(min_periods=1).mean()
+    )
+    for side in ("home", "away"):
+        part = panel[panel["side"] == side].drop_duplicates("game_id").set_index("game_id")[ADJUSTED_FORM_FIELDS]
+        for name in ADJUSTED_FORM_FIELDS:
+            out[f"{side}_{name}"] = out["game_id"].map(part[name])
+    for name in ADJUSTED_FORM_FIELDS:
+        out[f"{name}_diff"] = out[f"home_{name}"] - out[f"away_{name}"]
+    return out
 
 
 def _guess_tz(lat: float, lon: float) -> ZoneInfo:

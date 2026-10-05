@@ -380,3 +380,20 @@ def test_team_snapshot_ignores_cancelled_game_from_old_season():
         ]
     )
     assert team_snapshot(frame, "App State")["pregame_elo"] == 1700.0
+
+
+def test_predicted_scores_are_never_tied():
+    from src.simulate import _no_ties, prediction_payload
+
+    home = pd.Series([26.0, 28.0, 0.0, 0.0, 30.0])
+    away = pd.Series([26.0, 28.0, 0.0, 0.0, 24.0])
+    margin = pd.Series([0.27, -0.18, 0.1, -0.1, 6.0])
+    h, a = _no_ties(home, away, margin)
+    assert (h != a).all()
+    assert h.tolist() == [27.0, 28.0, 2.0, 0.0, 30.0]
+    assert a.tolist() == [26.0, 29.0, 0.0, 2.0, 24.0]
+    payload = prediction_payload(
+        pd.Series({"home_team": "A", "away_team": "B", "pred_home_points": 26.4, "pred_away_points": 26.2,
+                   "pred_margin": 0.2, "pred_home_win_prob": 0.51})
+    )
+    assert payload["pred_home_points"] == 27 and payload["pred_away_points"] == 26

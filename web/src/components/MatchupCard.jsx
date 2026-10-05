@@ -16,6 +16,39 @@ function verdict(hit) {
   return { label: "push", className: "push" };
 }
 
+function LineScore({ game, away, home }) {
+  const a = game.pred_away_quarters;
+  const h = game.pred_home_quarters;
+  if (!Array.isArray(a) || !Array.isArray(h) || a.length !== 4 || h.length !== 4) return null;
+  const row = (name, quarters, total) => (
+    <tr>
+      <th scope="row">{name}</th>
+      {quarters.map((points, index) => (
+        <td key={index}>{points}</td>
+      ))}
+      <td className="ls-total">{total}</td>
+    </tr>
+  );
+  return (
+    <table className="linescore" aria-label="Predicted score by quarter">
+      <thead>
+        <tr>
+          <th scope="col"></th>
+          <th scope="col">1</th>
+          <th scope="col">2</th>
+          <th scope="col">3</th>
+          <th scope="col">4</th>
+          <th scope="col">F</th>
+        </tr>
+      </thead>
+      <tbody>
+        {row(away.abbreviation || away.name || "Away", a, formatScore(game.projected_away_score))}
+        {row(home.abbreviation || home.name || "Home", h, formatScore(game.projected_home_score))}
+      </tbody>
+    </table>
+  );
+}
+
 export default function MatchupCard({ game, onOpen }) {
   const away = game.away_team || {};
   const home = game.home_team || {};
@@ -103,6 +136,7 @@ export default function MatchupCard({ game, onOpen }) {
             <div className="school">{home.name || home.school}</div>
           </div>
         </div>
+        <LineScore game={game} away={away} home={home} />
         <div className="winbar">
           <span>{formatProb(game.away_win_prob)}</span>
           <div className="track">

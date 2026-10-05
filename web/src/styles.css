@@ -661,3 +661,36 @@ textarea:focus-visible {
     animation: none !important;
   }
 }
+
+
+.linescore {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.linescore th,
+.linescore td {
+  padding: 2px 4px;
+  border-bottom: 1px solid currentColor;
+  border-bottom-color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.linescore thead th {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.linescore tbody th {
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.linescore .ls-total {
+  font-weight: 700;
+}

@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from src.cfbd_client import get_json
+from src.linescores import stored_years as stored_line_score_years, sync_line_scores
 from src.config import DB_PATH, END_YEAR, SEASON_TYPES, START_YEAR, WEEKS
 from src.schedule_sync import (
     fetch_schedule_lines,
@@ -461,6 +462,19 @@ def _latest_teams(fbs_teams: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _refresh_line_scores(start_year: int, end_year: int) -> None:
+    """Quarter scores feed the score-by-quarter model: fetch missing seasons and re-pull the live one."""
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            have = stored_line_score_years(con)
+        wanted = [y for y in range(start_year, end_year + 1) if y in live_seasons() or y not in have]
+        if wanted:
+            print(f"Quarter scores: fetching {wanted[0]}-{wanted[-1]}" if len(wanted) > 1 else f"Quarter scores: fetching {wanted[0]}")
+            sync_line_scores(wanted)
+    except Exception as exc:  # noqa: BLE001 - never block the main collect on an optional table
+        print(f"Quarter scores unavailable ({exc}); continuing")
+
+
 def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
     with sqlite3.connect(DB_PATH) as con:
         existing = stored_seasons(con)
@@ -480,6 +494,8 @@ def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
             f"cfbschedule scores: {schedule_report.get('updated', 0)} updated "
             f"from {schedule_report.get('fetched', 0)} local games"
         )
+
+    _refresh_line_scores(start_year, end_year)
 
     if not years:
         print("Nothing to collect from CFBD; requested seasons are already stored")

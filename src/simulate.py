@@ -8,6 +8,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src import quarters as quarters_mod
 from src.config import DB_PATH, MODELS_DIR
 from src.features import build_feature_frame, haversine_miles, model_matrix
 from src.train import annotate_board
@@ -35,12 +36,17 @@ SNAP_FIELDS = [
     "yards_allowed_prior",
     "success_prior",
     "def_success_prior",
+    "mov_x_l4",
+    "mov_x_l8",
+    "mov_x_season",
+    "sos_l4",
 ]
 
 _UNSET = object()
 _FRAME_CACHE: dict[str, Any] = {"mtime": None, "frame": None}
 _MODEL_CACHE: dict[str, Any] | None = None
 _MODEL_MTIMES: tuple | None = None
+_QUARTER_CACHE: dict[str, Any] = {"mtime": None, "model": None}
 
 MODEL_FILES = {
     "margin": "margin_hgb.joblib",
@@ -77,8 +83,21 @@ def _model_mtimes() -> tuple:
     )
 
 
+def load_quarter_model() -> "quarters_mod.QuarterModel | None":
+    """Fitted score-by-quarter model, or None before the first training run with quarter data."""
+    path = MODELS_DIR / quarters_mod.MODEL_FILE
+    mtime = path.stat().st_mtime_ns if path.exists() else None
+    if _QUARTER_CACHE["mtime"] != mtime or (mtime is not None and _QUARTER_CACHE["model"] is None):
+        _QUARTER_CACHE["model"] = quarters_mod.QuarterModel.load(MODELS_DIR) if mtime is not None else None
+        _QUARTER_CACHE["mtime"] = mtime
+        quarters_mod._LINE_CACHE.clear()  # cached line scores belong to the previous fit
+    return _QUARTER_CACHE["model"]
+
+
 def invalidate_cache() -> None:
     global _MODEL_CACHE
+    _QUARTER_CACHE["mtime"] = None
+    _QUARTER_CACHE["model"] = None
     _FRAME_CACHE["mtime"] = None
     _FRAME_CACHE["frame"] = None
     _MODEL_CACHE = None
@@ -169,6 +188,20 @@ def _legal_score_series(values: pd.Series) -> pd.Series:
     return snapped.mask(snapped.eq(1), 0)
 
 
+def _no_ties(home: pd.Series, away: pd.Series, margin: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """College football has no ties: when rounding makes the scores equal, the predicted winner gets +1.
+
+    Rounding is monotonic, so a tie is the only way it can disagree with the sign of the margin.
+    A winner at 0 jumps to 2 (a safety), since a team cannot score exactly 1.
+    """
+    tied = home.notna() & away.notna() & home.eq(away)
+    home_wins = pd.to_numeric(margin, errors="coerce").fillna(0.0) >= 0
+    bump = pd.Series(np.where(home.eq(0), 2.0, home + 1.0), index=home.index)
+    home = home.where(~(tied & home_wins), bump)
+    away = away.where(~(tied & ~home_wins), pd.Series(np.where(away.eq(0), 2.0, away + 1.0), index=away.index))
+    return home, away
+
+
 DEFAULT_TOTAL = 54.5
 
 
@@ -204,8 +237,12 @@ def score_slate(slate: pd.DataFrame, models: dict[str, Any] | None = None) -> pd
     out["pred_margin"] = margin["model"].predict(model_matrix(out, margin["features"]))
     out["pred_home_win_prob"] = win["model"].predict_proba(model_matrix(out, win["features"]))[:, 1]
     totals = predicted_totals(out)
-    out["pred_home_points"] = _legal_score_series(totals / 2.0 + out["pred_margin"] / 2.0)
-    out["pred_away_points"] = _legal_score_series(totals / 2.0 - out["pred_margin"] / 2.0)
+    out["pred_home_points"], out["pred_away_points"] = _no_ties(
+        _legal_score_series(totals / 2.0 + out["pred_margin"] / 2.0),
+        _legal_score_series(totals / 2.0 - out["pred_margin"] / 2.0),
+        out["pred_margin"],
+    )
+    _attach_quarters(out, totals)
     spread = pd.to_numeric(out["spread"], errors="coerce") if "spread" in out.columns else pd.Series(np.nan, index=out.index)
     out["edge_vs_spread"] = out["pred_margin"] + spread
     out["ats_edge"] = np.nan
@@ -213,6 +250,35 @@ def score_slate(slate: pd.DataFrame, models: dict[str, Any] | None = None) -> pd
     if not lined.empty:
         out.loc[lined.index, "ats_edge"] = ats["model"].predict(model_matrix(lined, ats["features"]))
     return annotate_board(out)
+
+
+def _attach_quarters(out: pd.DataFrame, totals: pd.Series) -> None:
+    """Replace rounded scores with a realistic quarter-by-quarter game (in place).
+
+    The displayed final is the sum of the quarters, so it can only be a reachable score.
+    Rows without a usable margin/total keep the rounded fallback.
+    """
+    model = load_quarter_model()
+    if model is None or out.empty:
+        return
+    cols = {f"pred_{side}_q{q}": np.full(len(out), np.nan) for side in ("home", "away") for q in (1, 2, 3, 4)}
+    for pos, (_, row) in enumerate(out.iterrows()):
+        margin = pd.to_numeric(row.get("pred_margin"), errors="coerce")
+        total = pd.to_numeric(totals.iloc[pos], errors="coerce")
+        if pd.isna(margin) or pd.isna(total):
+            continue
+        game = quarters_mod.typical_line_score(
+            model, str(row.get("home_team") or ""), str(row.get("away_team") or ""), float(total), float(margin), n_sims=1000
+        )
+        for q in range(4):
+            cols[f"pred_home_q{q + 1}"][pos] = game["home"][q]
+            cols[f"pred_away_q{q + 1}"][pos] = game["away"][q]
+    for name, values in cols.items():
+        out[name] = values
+    have = ~pd.isna(cols["pred_home_q1"])
+    for side in ("home", "away"):
+        total_pts = sum(out[f"pred_{side}_q{q}"] for q in (1, 2, 3, 4))
+        out.loc[have, f"pred_{side}_points"] = total_pts[have]
 
 
 def _team_rows(frame: pd.DataFrame, team: str) -> pd.DataFrame:
@@ -368,6 +434,10 @@ def _combine_snapshots(
             continue
         row[f"home_{field}"] = home.get(field)
         row[f"away_{field}"] = away.get(field)
+    for name in ("mov_x_l4", "mov_x_l8", "mov_x_season", "sos_l4"):
+        h = pd.to_numeric(pd.Series([home.get(name)]), errors="coerce").iloc[0]
+        a = pd.to_numeric(pd.Series([away.get(name)]), errors="coerce").iloc[0]
+        row[f"{name}_diff"] = (h - a) if pd.notna(h) and pd.notna(a) else np.nan
     row["home_pregame_elo"] = home_elo
     row["away_pregame_elo"] = away_elo
     row["home_talent"] = home_talent
@@ -551,6 +621,11 @@ def home_spread_label(abbr: str | None, spread: object, home_name: str = "") -> 
     return f"{tag} {signed}"
 
 
+def _quarter_list(row: pd.Series, side: str) -> list[int] | None:
+    values = [_json_num(row.get(f"pred_{side}_q{q}")) for q in (1, 2, 3, 4)]
+    return None if any(v is None for v in values) else [int(round(v)) for v in values]
+
+
 def prediction_payload(row: pd.Series, teams: dict[str, dict] | None = None) -> dict[str, Any]:
     teams = teams or {}
     home_name = str(row.get("home_team") or "")
@@ -559,6 +634,14 @@ def prediction_payload(row: pd.Series, teams: dict[str, dict] | None = None) -> 
     away_wp = None if home_wp is None else round(1.0 - float(home_wp), 6)
     home_pts = legal_football_points(row.get("pred_home_points"))
     away_pts = legal_football_points(row.get("pred_away_points"))
+    if home_pts is not None and home_pts == away_pts:
+        margin = _json_num(row.get("pred_margin"))
+        if margin is None and home_wp is not None:
+            margin = home_wp - 0.5
+        h, a = _no_ties(pd.Series([float(home_pts)]), pd.Series([float(away_pts)]), pd.Series([margin]))
+        home_pts, away_pts = int(h.iloc[0]), int(a.iloc[0])
+    home_quarters = _quarter_list(row, "home")
+    away_quarters = _quarter_list(row, "away")
     status = row.get("status")
     if not status:
         status = "completed" if bool(row.get("completed")) else "scheduled"
@@ -596,6 +679,8 @@ def prediction_payload(row: pd.Series, teams: dict[str, dict] | None = None) -> 
         "pred_margin": _json_num(row.get("pred_margin")),
         "pred_home_points": home_pts,
         "pred_away_points": away_pts,
+        "pred_home_quarters": home_quarters,
+        "pred_away_quarters": away_quarters,
         "pick": None if pd.isna(row.get("pick")) else row.get("pick"),
         "pick_prob": _json_num(row.get("pick_prob")),
         "conf": None if pd.isna(row.get("conf")) else row.get("conf"),
