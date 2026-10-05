@@ -287,7 +287,7 @@ def test_job_post_requires_json_content_type_and_rejects_foreign_origin(monkeypa
     from app import main as app_main
 
     started = []
-    monkeypatch.setattr(app_main, "start_job", lambda kind, holdout_season=None: started.append(kind) or {"id": "x"})
+    monkeypatch.setattr(app_main, "start_job", lambda kind: started.append(kind) or {"id": "x"})
     client = TestClient(app_main.app)
     # form-style "simple" cross-site request: no preflight, no JSON content type
     assert client.post("/api/jobs/pipeline", headers={"Origin": "https://evil.example"}).status_code == 415

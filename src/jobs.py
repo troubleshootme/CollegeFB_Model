@@ -138,18 +138,16 @@ def start_job(
     kind: str,
     extra_args: list[str] | None = None,
     command: list[str] | None = None,
-    holdout_season: int | None = None,
 ) -> dict[str, Any]:
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     with _START_LOCK:  # check-then-launch must be atomic across request threads
-        return _start_locked(kind, extra_args, command, holdout_season)
+        return _start_locked(kind, extra_args, command)
 
 
 def _start_locked(
     kind: str,
     extra_args: list[str] | None,
     command: list[str] | None,
-    holdout_season: int | None,
 ) -> dict[str, Any]:
     active = running_job()
     if active:
@@ -161,8 +159,6 @@ def _start_locked(
             raise ValueError(f"unknown job kind {kind!r}")
         else:
             command = [sys.executable, str(ROOT / "run_pipeline.py"), *PIPELINE_FLAGS[kind]]
-            if holdout_season is not None:
-                command.extend(["--holdout-season", str(holdout_season)])
             if extra_args:
                 command.extend(extra_args)
     job_id = uuid.uuid4().hex[:12]

@@ -7,7 +7,6 @@ export default function Train() {
   const [jobs, setJobs] = useState([]);
   const [active, setActive] = useState(null);
   const [error, setError] = useState("");
-  const [holdout, setHoldout] = useState("");
 
   async function refresh() {
     const [m, i, j] = await Promise.all([getMetrics(), getImportance(), getJobs()]);
@@ -43,7 +42,7 @@ export default function Train() {
   async function run(kind) {
     setError("");
     try {
-      const job = await startJob(kind, holdout ? Number(holdout) : undefined);
+      const job = await startJob(kind);
       setActive(job);
     } catch (err) {
       setError(err.message);
@@ -61,15 +60,11 @@ export default function Train() {
       <p className="lede">
         Collect refreshes only the live season on CFBD, except scores: those come from
         cfbschedule when it is up. Past seasons already in the database are not re-fetched.
-        Weather fills stadium forecasts. Train fits the margin, win, and ATS models. Only one
-        job runs at a time.
+        Weather fills stadium forecasts. Train fits the margin, win, ATS, and score-by-quarter models on every completed game and
+        scores the latest finished season out of sample. Only one job runs at a time.
       </p>
       {error && <p className="error">{error}</p>}
       <div className="toolbar">
-        <label className="field">
-          Holdout season
-          <input value={holdout} placeholder="auto" onChange={(event) => setHoldout(event.target.value)} />
-        </label>
         <button className="btn ghost" type="button" onClick={() => run("collect")}>
           Collect
         </button>
@@ -89,14 +84,14 @@ export default function Train() {
       {!metrics?.ready && (
         <div className="empty">
           <h2>No metrics yet</h2>
-          <p>Run training after the SQLite database has games. Holdout defaults to 2025.</p>
+          <p>Run training after the SQLite database has games.</p>
         </div>
       )}
       {metrics?.ready && (
         <div className="metrics">
           <div className="metric">
             <b>{hgb.winner_accuracy ?? "—"}</b>
-            <span>Holdout winner acc</span>
+            <span>Winner acc (latest finished season, out of sample)</span>
           </div>
           <div className="metric">
             <b>{hgb.mae ?? "—"}</b>

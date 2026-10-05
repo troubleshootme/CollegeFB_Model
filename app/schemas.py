@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MatchupRequest(BaseModel):
@@ -23,4 +23,6 @@ class MatchupRequest(BaseModel):
 
 
 class JobStartRequest(BaseModel):
-    holdout_season: int | None = Field(default=None)
+    """Job launches take no parameters; unknown fields from older clients are ignored."""
+
+    model_config = ConfigDict(extra="ignore")

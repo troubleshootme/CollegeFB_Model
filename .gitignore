@@ -31,3 +31,6 @@ models/jobs/
 
 web/node_modules/
 web/dist/
+
+web/.vite/
+models/quarter_model.json

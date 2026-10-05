@@ -330,11 +330,10 @@ def job_detail(job_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/jobs/{kind}")
-def create_job(kind: str, body: JobStartRequest | None = None) -> dict[str, Any]:
+def create_job(kind: str, _body: JobStartRequest | None = None) -> dict[str, Any]:
     if kind not in {"collect", "weather", "train", "pipeline", "scores"}:
         raise HTTPException(status_code=404, detail="Unknown job kind")
-    holdout = body.holdout_season if body else None
     try:
-        return start_job(kind, holdout_season=holdout)
+        return start_job(kind)
     except JobConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
