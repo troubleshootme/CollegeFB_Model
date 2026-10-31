@@ -11,7 +11,7 @@ import pandas as pd
 from src import quarters as quarters_mod
 from src.config import DB_PATH, MODELS_DIR
 from src.features import build_feature_frame, haversine_miles, model_matrix
-from src.train import annotate_board
+from src.train import annotate_board, combine_market_picks
 
 SNAP_FIELDS = [
     "pregame_elo",
@@ -539,14 +539,21 @@ def simulate_matchup(
     return scored.reset_index(drop=True)
 
 
-def _json_num(value: object) -> float | int | None:
+def _is_na(value: object) -> bool:
     if value is None:
-        return None
+        return True
     try:
-        if pd.isna(value):
-            return None
+        result = pd.isna(value)
     except (TypeError, ValueError):
-        pass
+        return False
+    if isinstance(result, (bool, np.bool_)):
+        return bool(result)
+    return False
+
+
+def _json_num(value: object) -> float | int | None:
+    if _is_na(value):
+        return None
     if isinstance(value, (np.integer,)):
         return int(value)
     if isinstance(value, (np.floating, float)):
@@ -554,7 +561,18 @@ def _json_num(value: object) -> float | int | None:
         return None if not np.isfinite(number) else number
     if isinstance(value, (int,)):
         return int(value)
-    return value if isinstance(value, (str, bool)) else None
+    if isinstance(value, (np.bool_, bool)):
+        return int(bool(value))
+    return None
+
+
+def _json_str(value: object) -> str | None:
+    if _is_na(value):
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "<na>", "none"}:
+        return None
+    return text
 
 
 def _iso(value: object) -> str | None:
@@ -650,24 +668,22 @@ def prediction_payload(row: pd.Series, teams: dict[str, dict] | None = None) -> 
         game_id_out = None if game_id is None or pd.isna(game_id) else int(game_id)
     except (TypeError, ValueError):
         game_id_out = None
-    cover = row.get("cover_side")
-    if cover is not None:
-        try:
-            if pd.isna(cover):
-                cover = None
-        except (TypeError, ValueError):
-            pass
+    cover = _json_str(row.get("cover_side"))
+    ou_side = _json_str(row.get("ou_side"))
+    market_picks = _json_str(row.get("market_picks"))
+    if market_picks is None:
+        market_picks = combine_market_picks(cover, ou_side)
     home_team = teams.get(home_name) or {"name": home_name, "school": home_name}
     away_team = teams.get(away_name) or {"name": away_name, "school": away_name}
     return {
         "id": game_id_out,
         "game_id": game_id_out,
         "season": _json_num(row.get("season")),
-        "week": _json_num(row["board_week"] if "board_week" in row.index and pd.notna(row.get("board_week")) else row.get("week")),
+        "week": _json_num(row["board_week"] if "board_week" in row.index and not _is_na(row.get("board_week")) else row.get("week")),
         "status": str(status),
         "start_date": _iso(row.get("start_date")),
-        "kick_label": None if pd.isna(row.get("kick_label")) else str(row.get("kick_label") or "") or None,
-        "venue": None if pd.isna(row.get("venue")) else row.get("venue"),
+        "kick_label": _json_str(row.get("kick_label")),
+        "venue": _json_str(row.get("venue")),
         "neutral_site": bool(row.get("neutral_site")),
         "conference_game": bool(row.get("conference_game")),
         "home_team": home_team,
@@ -681,10 +697,12 @@ def prediction_payload(row: pd.Series, teams: dict[str, dict] | None = None) -> 
         "pred_away_points": away_pts,
         "pred_home_quarters": home_quarters,
         "pred_away_quarters": away_quarters,
-        "pick": None if pd.isna(row.get("pick")) else row.get("pick"),
+        "pick": _json_str(row.get("pick")),
         "pick_prob": _json_num(row.get("pick_prob")),
-        "conf": None if pd.isna(row.get("conf")) else row.get("conf"),
-        "cover_side": None if cover is None else str(cover),
+        "conf": _json_str(row.get("conf")),
+        "cover_side": cover,
+        "ou_side": ou_side,
+        "market_picks": market_picks,
         "ats_edge": _json_num(row.get("ats_edge")),
         "edge_vs_spread": _json_num(row.get("edge_vs_spread")),
         "spread": _json_num(row.get("spread")),

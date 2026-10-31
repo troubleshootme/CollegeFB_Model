@@ -12,12 +12,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.collect import collect  # noqa: E402
-from src.config import END_YEAR, START_YEAR  # noqa: E402
+from src.config import END_YEAR, START_YEAR, enable_cfbd_calls  # noqa: E402
 from src.train import train  # noqa: E402
 from src.weather import fetch_weather  # noqa: E402
 
 
 def main() -> None:
+    enable_cfbd_calls()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start-year", type=int, default=START_YEAR)
     parser.add_argument("--end-year", type=int, default=END_YEAR)

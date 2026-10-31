@@ -5,6 +5,47 @@ import time
 from src.jobs import JobConflict, get_job, start_job
 
 
+def test_collect_job_sets_cfbd_allow_calls(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.jobs.JOBS_DIR", tmp_path)
+    captured = {}
+
+    class _Proc:
+        pid = 4242
+
+        def wait(self):
+            return 0
+
+    def fake_popen(command, **kwargs):
+        captured["env"] = kwargs.get("env") or {}
+        captured["command"] = command
+        return _Proc()
+
+    monkeypatch.setattr("src.jobs.subprocess.Popen", fake_popen)
+    job = start_job("collect")
+    assert captured["env"].get("CFBD_ALLOW_CALLS") == "1"
+    assert job["kind"] == "collect"
+
+
+def test_scores_job_does_not_set_cfbd_allow_calls(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.jobs.JOBS_DIR", tmp_path)
+    captured = {}
+
+    class _Proc:
+        pid = 4243
+
+        def wait(self):
+            return 0
+
+    def fake_popen(command, **kwargs):
+        captured["env"] = kwargs.get("env") or {}
+        return _Proc()
+
+    monkeypatch.setattr("src.jobs.subprocess.Popen", fake_popen)
+    monkeypatch.delenv("CFBD_ALLOW_CALLS", raising=False)
+    start_job("scores")
+    assert "CFBD_ALLOW_CALLS" not in captured["env"]
+
+
 def test_start_job_runs_command_and_records_success(tmp_path, monkeypatch):
     monkeypatch.setattr("src.jobs.JOBS_DIR", tmp_path)
     job = start_job("echo", extra_args=["pipeline-ok"], command=["/bin/echo", "pipeline-ok"])

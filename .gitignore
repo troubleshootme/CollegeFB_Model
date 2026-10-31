@@ -13,6 +13,7 @@ htmlcov/
 .omc/
 
 data/cfb.db
+data/fbs_teams_cache.json
 data/cache/
 data/features.csv
 data/walkforward_predictions.csv

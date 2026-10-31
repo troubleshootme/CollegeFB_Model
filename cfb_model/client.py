@@ -51,20 +51,34 @@ class CfbdClient:
         self.close()
 
     def require_key(self) -> None:
+        config.require_cfbd_allowed()
         if not self.api_key:
             raise RuntimeError(
                 f"Set {config.API_KEY_ENV} in the environment or a .env file "
                 "(see .env.example). Get a key at https://collegefootballdata.com/key"
             )
 
+    def require_quota(self) -> None:
+        config.require_cfbd_allowed()
+        if self._user_info is None:
+            self.user_info()
+        remaining = self.remaining_calls()
+        if remaining is not None and remaining <= 0:
+            raise config.CfbdQuotaExhausted(
+                "CFBD remainingCalls is 0; refusing further requests so the shared monthly quota is not exhausted."
+            )
+
     def user_info(self, refresh: bool = False) -> dict[str, Any] | None:
         if self._user_info is not None and not refresh:
             return self._user_info
+        config.require_cfbd_allowed()
         if not self.api_key:
             return None
         try:
             info = self._retry(lambda: self.info_api.get_user_info())
             self._user_info = to_plain(info) or {}
+        except config.CfbdQuotaExhausted:
+            raise
         except Exception as exc:
             print(f"warning: GET /info failed ({exc})")
             self._user_info = {}
@@ -88,8 +102,8 @@ class CfbdClient:
         return False
 
     def remaining_calls(self) -> int | None:
-        info = self.user_info() or {}
-        remaining = info.get("remaining_calls")
+        info = self._user_info or {}
+        remaining = info.get("remaining_calls") if isinstance(info, dict) else None
         try:
             return int(remaining) if remaining is not None else None
         except (TypeError, ValueError):
@@ -103,6 +117,7 @@ class CfbdClient:
                     return json.load(handle)
             except json.JSONDecodeError:
                 path.unlink(missing_ok=True)  # truncated by an earlier crash: refetch
+        self.require_quota()
         result = self._retry(fn)
         payload = to_plain(result)
         if use_cache:
@@ -122,6 +137,11 @@ class CfbdClient:
         delay = 2.0
         last_exc: Exception | None = None
         for attempt in range(attempts):
+            remaining = self.remaining_calls()
+            if remaining is not None and remaining <= 0:
+                raise config.CfbdQuotaExhausted(
+                    "CFBD remainingCalls is 0; refusing further requests so the shared monthly quota is not exhausted."
+                )
             try:
                 return fn()
             except ApiException as exc:

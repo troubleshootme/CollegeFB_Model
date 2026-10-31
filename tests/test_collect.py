@@ -1,8 +1,14 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from src import collect as collect_mod
+
+
+@pytest.fixture(autouse=True)
+def _no_cfbd_quota_probe(monkeypatch):
+    monkeypatch.setattr(collect_mod, "ping_quota", lambda: 10_000)
 
 
 def test_live_seasons_only_current_year_after_january():
@@ -201,6 +207,22 @@ def test_ratings_to_sp_rows_maps_nested_sp_and_fpi():
     assert rows[0]["elo"] == 2124
 
 
+def test_collect_aborts_when_cfbd_quota_is_zero(tmp_path, monkeypatch):
+    from src.config import CfbdQuotaExhausted
+
+    monkeypatch.setattr(collect_mod, "DB_PATH", tmp_path / "collegeFootball.db")
+    monkeypatch.setattr(
+        collect_mod,
+        "ping_quota",
+        lambda: (_ for _ in ()).throw(CfbdQuotaExhausted("CFBD remainingCalls is 0")),
+    )
+    called = []
+    monkeypatch.setattr(collect_mod, "fetch_games", lambda year: called.append(year) or pd.DataFrame())
+    with pytest.raises(CfbdQuotaExhausted):
+        collect_mod.collect(2026, 2026)
+    assert called == []
+
+
 def test_collect_uses_cfbschedule_ratings_instead_of_cfbd(tmp_path, monkeypatch):
     db = tmp_path / "collegeFootball.db"
     monkeypatch.setattr(collect_mod, "DB_PATH", db)
@@ -273,4 +295,4 @@ def test_collect_uses_cfbschedule_ratings_instead_of_cfbd(tmp_path, monkeypatch)
 
     assert ("sp", 2026) not in year_calls
     assert ("talent", 2026) not in year_calls
-    assert ("lines", 2026) not in year_calls
+    assert ("lines", 2026) in year_calls  # CFBD /lines preferred (numeric game_id)

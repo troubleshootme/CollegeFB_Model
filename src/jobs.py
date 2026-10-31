@@ -23,6 +23,10 @@ PIPELINE_FLAGS = {
     "pipeline": [],
 }
 
+# Job kinds whose subprocess may spend CFBD quota. The API/serve process itself
+# must leave CFBD_ALLOW_CALLS unset so /api/teams and /api/predictions cannot leak.
+CFBD_JOB_KINDS = {"collect", "pipeline", "train", "weather"}
+
 
 class JobConflict(RuntimeError):
     """A collect/train job is already running."""
@@ -177,12 +181,18 @@ def _start_locked(
     }
     _write(meta_path, payload)
     log_handle = log_path.open("w")
+    env = os.environ.copy()
+    if kind in CFBD_JOB_KINDS:
+        env["CFBD_ALLOW_CALLS"] = "1"
+    else:
+        env.pop("CFBD_ALLOW_CALLS", None)
     proc = subprocess.Popen(
         command,
         cwd=str(ROOT),
         stdout=log_handle,
         stderr=subprocess.STDOUT,
         start_new_session=True,
+        env=env,
     )
     payload["pid"] = proc.pid
     payload["status"] = "running"

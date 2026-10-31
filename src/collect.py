@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
@@ -7,9 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.cfbd_client import get_json
+from src.cfbd_client import get_json, ping_quota
 from src.linescores import stored_years as stored_line_score_years, sync_line_scores
-from src.config import DB_PATH, END_YEAR, SEASON_TYPES, START_YEAR, WEEKS
+from src.config import DB_PATH, END_YEAR, SEASON_TYPES, START_YEAR, TEAMS_CACHE_PATH, WEEKS
 from src.schedule_sync import (
     fetch_schedule_lines,
     fetch_schedule_ratings,
@@ -17,6 +18,7 @@ from src.schedule_sync import (
     ratings_to_sp_rows,
     sync_schedule_results,
     talent_to_rows,
+    team_key,
 )
 
 
@@ -136,7 +138,87 @@ def fetch_team_stats(year: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def numeric_game_id(value: Any) -> int | None:
+    """CFBD game ids are integers. cfbschedule UUIDs cannot join `games.game_id`."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "<na>"}:
+        return None
+    if text.lstrip("-").isdigit():
+        try:
+            return int(text)
+        except (TypeError, ValueError):
+            return None
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return None
+    if number != number:  # NaN
+        return None
+    as_int = int(number)
+    return as_int if float(as_int) == number else None
+
+
+def keep_numeric_game_ids(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame is None or frame.empty or "game_id" not in frame.columns:
+        return pd.DataFrame() if frame is None else frame.iloc[0:0].copy()
+    mapped = frame["game_id"].map(numeric_game_id)
+    out = frame.loc[mapped.notna()].copy()
+    out["game_id"] = mapped.loc[mapped.notna()].astype("int64")
+    return out
+
+
+def attach_numeric_game_ids(lines: pd.DataFrame, games: pd.DataFrame) -> pd.DataFrame:
+    """Keep CFBD integer ids; remap leftover UUID rows via season/week/home/away."""
+    if lines is None or lines.empty:
+        return pd.DataFrame()
+    kept = keep_numeric_game_ids(lines)
+    leftover = lines
+    if "game_id" in lines.columns:
+        leftover = lines.loc[lines["game_id"].map(numeric_game_id).isna()].copy()
+    if leftover.empty or games is None or games.empty:
+        return kept
+    lookup: dict[tuple[int, int, str, str], int] = {}
+    for _, game in games.iterrows():
+        gid = numeric_game_id(game.get("game_id"))
+        if gid is None:
+            continue
+        try:
+            key = (
+                int(game["season"]),
+                int(game["week"]),
+                team_key(game.get("home_team")),
+                team_key(game.get("away_team")),
+            )
+        except (TypeError, ValueError):
+            continue
+        lookup[key] = gid
+    remapped: list[dict[str, Any]] = []
+    for _, row in leftover.iterrows():
+        try:
+            key = (
+                int(row.get("season")),
+                int(row.get("week") or 0),
+                team_key(row.get("home_team")),
+                team_key(row.get("away_team")),
+            )
+        except (TypeError, ValueError):
+            continue
+        gid = lookup.get(key)
+        if gid is None:
+            continue
+        rec = row.to_dict()
+        rec["game_id"] = gid
+        remapped.append(rec)
+    if not remapped:
+        return kept
+    extra = pd.DataFrame(remapped)
+    return extra if kept.empty else pd.concat([kept, extra], ignore_index=True)
+
+
 def fetch_lines(year: int) -> pd.DataFrame:
+    """Prefer CFBD `/lines` (numeric `gameId`). Week loop only when the year call is empty."""
     rows: list[dict[str, Any]] = []
     for season_type in SEASON_TYPES:
         payload = get_json("/lines", {"year": year, "seasonType": season_type})
@@ -146,7 +228,7 @@ def fetch_lines(year: int) -> pd.DataFrame:
                 rows.extend(_parse_lines(payload or []))
             continue
         rows.extend(_parse_lines(payload))
-    return pd.DataFrame(rows)
+    return keep_numeric_game_ids(pd.DataFrame(rows))
 
 
 def _parse_lines(payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -475,10 +557,71 @@ def _refresh_line_scores(start_year: int, end_year: int) -> None:
         print(f"Quarter scores unavailable ({exc}); continuing")
 
 
+def _write_teams_cache(fbs_teams: pd.DataFrame) -> None:
+    """Sidecar JSON so serve can read teams even if SQLite branding columns are missing."""
+    if fbs_teams is None or fbs_teams.empty:
+        return
+    latest = _latest_teams(fbs_teams)
+    source = latest if not latest.empty else fbs_teams
+    rows = []
+    for _, row in source.iterrows():
+        school = row.get("school") or row.get("name")
+        if not school or pd.isna(school):
+            continue
+        team_id = row.get("id") if "id" in row.index else row.get("team_id")
+        try:
+            team_id_out = int(team_id) if team_id is not None and not pd.isna(team_id) else None
+        except (TypeError, ValueError):
+            team_id_out = None
+        logo = row.get("logo")
+        if logo is not None and pd.isna(logo):
+            logo = None
+        abbr = row.get("abbreviation")
+        if abbr is not None and pd.isna(abbr):
+            abbr = None
+        conf = row.get("conference")
+        if conf is not None and pd.isna(conf):
+            conf = None
+        color = row.get("color")
+        if color is not None and pd.isna(color):
+            color = None
+        alt = row.get("alt_color")
+        if alt is not None and pd.isna(alt):
+            alt = None
+        rows.append(
+            {
+                "id": team_id_out,
+                "name": str(school),
+                "school": str(school),
+                "abbreviation": None if abbr is None else str(abbr),
+                "conference": None if conf is None else str(conf),
+                "logo": None if logo is None else str(logo),
+                "color": None if color is None else str(color),
+                "alt_color": None if alt is None else str(alt),
+            }
+        )
+    if not rows:
+        return
+    path = TEAMS_CACHE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(rows, indent=2))
+    tmp.replace(path)
+
+
 def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
+    try:
+        remaining = ping_quota()
+        if remaining is not None:
+            print(f"CFBD remainingCalls={remaining}")
+    except Exception as exc:
+        print(f"CFBD quota probe failed ({exc})")
+        raise
+
     with sqlite3.connect(DB_PATH) as con:
         existing = stored_seasons(con)
         have_venues = _table_has_rows(con, "venues")
+        games_existing = _read_table(con, "games")
 
     years = seasons_to_fetch(start_year, end_year, existing)
     skipped = [year for year in range(start_year, end_year + 1) if year not in years]
@@ -521,16 +664,28 @@ def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
     stats_new = _concat(team_stats_parts)
     print(f"team_game_stats fetched {len(stats_new):,}")
 
+    games_for_ids = games_existing
+    if not games_new.empty:
+        games_for_ids = merge_year_frames(games_existing, games_new, "season", years)
+
     lines_parts = []
     for year in years:
-        if sibling_ok:
-            sibling_lines = fetch_schedule_lines(year)
-            if sibling_lines:
-                print(f"lines {year} from cfbschedule ({len(sibling_lines)})")
-                lines_parts.append(pd.DataFrame(sibling_lines))
-                continue
-        print(f"lines {year}...")
-        lines_parts.append(fetch_lines(year))
+        print(f"lines {year} from CFBD /lines (numeric game_id)...")
+        cfbd_lines = fetch_lines(year)
+        if cfbd_lines is not None and not cfbd_lines.empty:
+            lines_parts.append(cfbd_lines)
+            continue
+        sibling_lines = fetch_schedule_lines(year) if sibling_ok else []
+        if sibling_lines:
+            remapped = attach_numeric_game_ids(pd.DataFrame(sibling_lines), games_for_ids)
+            dropped = len(sibling_lines) - len(remapped)
+            print(
+                f"lines {year} CFBD empty; cfbschedule fallback "
+                f"({len(remapped)} numeric ids, {dropped} UUID rows dropped)"
+            )
+            lines_parts.append(remapped)
+            continue
+        print(f"lines {year}: none")
     lines_new = _concat(lines_parts)
     print(f"betting_lines fetched {len(lines_new):,}")
 
@@ -604,9 +759,17 @@ def collect(start_year: int = START_YEAR, end_year: int = END_YEAR) -> None:
         con.execute("CREATE INDEX IF NOT EXISTS ix_lines_game ON betting_lines(game_id)")
         con.commit()
 
+    try:
+        _write_teams_cache(fbs_teams)
+    except Exception as exc:  # noqa: BLE001 - cache file is optional; SQLite is the source of truth
+        print(f"team cache file skipped ({exc})")
+
     sync_schedule_results(force=True)
     print(f"Database ready at {DB_PATH}")
 
 
 if __name__ == "__main__":
+    from src.config import enable_cfbd_calls
+
+    enable_cfbd_calls()
     collect()

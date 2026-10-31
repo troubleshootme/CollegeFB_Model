@@ -53,14 +53,24 @@ def run_ingest(
         full = config.INGEST_FULL_DEFAULT
     if include_weather is None:
         include_weather = config.INGEST_WEATHER_DEFAULT
+    config.enable_cfbd_calls()
     own_client = client is None
     client = client or CfbdClient()
     client.require_key()
     info = client.user_info() or {}
+    remaining = info.get("remaining_calls")
     print(
-        f"CFBD tier={info.get('tier_name')} remaining={info.get('remaining_calls')} "
+        f"CFBD tier={info.get('tier_name')} remaining={remaining} "
         f"limit={info.get('monthly_limit')}"
     )
+    if remaining is not None:
+        try:
+            if int(remaining) <= 0:
+                raise config.CfbdQuotaExhausted(
+                    "CFBD remainingCalls is 0; aborting ingest so the shared monthly quota is not exhausted."
+                )
+        except (TypeError, ValueError):
+            pass
     counts: dict[str, int] = {}
     conn = store.init_schema()
     try:
@@ -339,6 +349,10 @@ def _ingest_year(client: CfbdClient, conn, year: int, use_cache: bool, full: boo
     remaining = client.remaining_calls()
     if remaining is not None:
         print(f"  remaining API calls: {remaining}")
+        if remaining <= 0:
+            raise config.CfbdQuotaExhausted(
+                "CFBD remainingCalls hit 0 mid-ingest; stopping before more live-season pulls."
+            )
     return counts
 
 

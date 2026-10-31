@@ -64,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "ingest":
         from cfb_model.ingest import run_ingest
 
+        config.enable_cfbd_calls()
         counts = run_ingest(
             start_year=args.start_year,
             end_year=args.end_year,

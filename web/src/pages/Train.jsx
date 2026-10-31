@@ -59,7 +59,8 @@ export default function Train() {
       <h1>Retrain on latest games</h1>
       <p className="lede">
         Collect refreshes only the live season on CFBD, except scores: those come from
-        cfbschedule when it is up. Past seasons already in the database are not re-fetched.
+        cfbschedule when it is up. The board, team autocomplete, and logos never call CFBD.
+        Past seasons already in the database are not re-fetched.
         Weather fills stadium forecasts. Train fits the margin, win, ATS, and score-by-quarter models on every completed game and
         scores the latest finished season out of sample. Only one job runs at a time.
       </p>

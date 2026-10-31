@@ -64,6 +64,8 @@ Open-Meteo ─┘                      │
 
 On ingest start the client calls `GET /info` and skips WEPA / CFBD weather when the key’s tier does not include those features.
 
+**Serve vs train:** the Matchup Desk API (`app/`, `/api/teams`, `/api/predictions`) must never call CFBD. Set `CFBD_ALLOW_CALLS=1` only on collect/ingest/retrain jobs. Live scores come from the sibling cfbschedule stack. Quota, team cache, and cron: [`docs/cfbd-quota.md`](docs/cfbd-quota.md), [`ops/crontab`](ops/crontab).
+
 ## Warehouse
 
 Normalized SQLite at `data/cfb.db` (gitignored). Schema: [`cfb_model/schema.sql`](cfb_model/schema.sql).
