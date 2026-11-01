@@ -21,6 +21,8 @@ services:
     init: true  # reap finished job subprocesses (otherwise they linger as zombies)
     environment:
       PYTHONUNBUFFERED: "1"
+      # Key is available so /api/jobs/collect can spawn a train subprocess.
+      # Do not set CFBD_ALLOW_CALLS here — the serve process must not call CFBD.
       CFBD_API_KEY: ${CFBD_API_KEY:-}
       MODEL_API_KEY: ${MODEL_API_KEY:-}
       CFBSCHEDULE_URL: ${CFBSCHEDULE_URL:-http://host.docker.internal:47392}

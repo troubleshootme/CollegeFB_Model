@@ -22,10 +22,14 @@ def test_haversine_missing_coordinates_is_none_not_half_the_planet():
 
 def test_cached_call_survives_datetimes_and_truncated_cache(tmp_path, monkeypatch):
     pytest.importorskip("cfbd")
+    from cfb_model import config
     from cfb_model.client import CfbdClient
 
+    config.enable_cfbd_calls()
     client = CfbdClient.__new__(CfbdClient)
     client.cache_dir = tmp_path
+    client._user_info = {"remaining_calls": 1000}
+    client.api_key = "test"
     calls = []
 
     def fetch():

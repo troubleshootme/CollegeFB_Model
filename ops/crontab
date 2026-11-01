@@ -1,0 +1,13 @@
+# Matchup Desk — CFBD quota belongs to train jobs, never the API/serve process.
+# Install with: crontab ops/crontab
+# POSIX cron ignores a last line that has no trailing newline. Keep this file
+# newline-terminated so the Monday retrain actually runs.
+SHELL=/bin/bash
+PATH=/usr/bin:/bin
+
+# Live scores/schedule: sibling cfbschedule stack (no CFBD).
+*/15 * * * * cd /opt/CollegeFB_Model && /usr/bin/python3 -m src.schedule_sync >> /var/log/cfb-scores.log 2>&1
+
+# Monday 06:00 America/Chicago (11:00 UTC during CDT) collect + retrain.
+# This is the only process that should spend CFBD remainingCalls.
+0 11 * * 1 cd /opt/CollegeFB_Model && CFBD_ALLOW_CALLS=1 /usr/bin/python3 run_pipeline.py >> /var/log/cfb-retrain.log 2>&1

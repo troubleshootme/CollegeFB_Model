@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -50,6 +51,52 @@ def test_predictions_without_models_returns_503(client, monkeypatch):
     response = client.get("/api/predictions", params={"season": 2026, "week": 1})
     assert response.status_code == 503
     assert "train" in response.json()["detail"].lower()
+
+
+def test_predictions_json_safe_without_over_under_lean(client, monkeypatch):
+    teams = {
+        "Alabama": _team("Alabama", "#9E1B32", "https://cdn.example/ala.png"),
+        "Georgia": _team("Georgia", "#BA0C2F", "https://cdn.example/uga.png"),
+    }
+    row = pd.Series(
+        {
+            "game_id": np.int64(401),
+            "season": np.int64(2026),
+            "week": np.int64(9),
+            "completed": False,
+            "status": "scheduled",
+            "start_date": pd.Timestamp("2026-10-25T16:00:00Z"),
+            "kick_label": np.str_("Sat Oct 25, 11:00 AM CT"),
+            "home_team": "Alabama",
+            "away_team": "Georgia",
+            "venue": "Bryant-Denny Stadium",
+            "neutral_site": 0,
+            "conference_game": 1,
+            "pred_margin": np.float64(6.2),
+            "pred_home_win_prob": np.float64(0.64),
+            "pred_home_points": np.float64(31.1),
+            "pred_away_points": np.float64(24.9),
+            "pick": np.str_("Alabama"),
+            "pick_prob": np.float64(0.64),
+            "conf": np.str_("likely"),
+            "cover_side": pd.NA,
+            "ou_side": np.nan,
+            "market_picks": np.nan,
+            "ats_edge": np.float64("nan"),
+            "edge_vs_spread": np.nan,
+            "spread": np.float64(-3.5),
+            "over_under": np.nan,
+        }
+    )
+    monkeypatch.setattr("app.main.models_ready", lambda: True)
+    monkeypatch.setattr("app.main.load_team_directory", lambda: teams)
+    monkeypatch.setattr("app.main.score_week", lambda season, week: pd.DataFrame([row]))
+    response = client.get("/api/predictions", params={"season": 2026, "week": 9})
+    assert response.status_code == 200
+    game = response.json()["games"][0]
+    assert game["over_under"] is None
+    assert game["market_picks"] is None
+    assert game["pick"] == "Alabama"
 
 
 def test_weekly_predictions_shape(client, monkeypatch):

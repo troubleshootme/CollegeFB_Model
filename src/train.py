@@ -91,22 +91,72 @@ def _win_conf(home_wp: float) -> str:
     return "lean"
 
 
+def _label_or_na(value: object) -> object:
+    if value is None:
+        return pd.NA
+    try:
+        if pd.isna(value):
+            return pd.NA
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "<na>", "none"}:
+        return pd.NA
+    return text
+
+
+def combine_market_picks(cover_side: object, ou_side: object) -> str | None:
+    """Join ATS + O/U leans as strings. Never numpy-add a team name to a missing float."""
+    parts = []
+    for value in (cover_side, ou_side):
+        label = _label_or_na(value)
+        if label is pd.NA:
+            continue
+        parts.append(str(label))
+    return " / ".join(parts) or None
+
+
 def annotate_board(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     out["kick_label"] = out["start_date"].map(_kick_label)
     margin = pd.to_numeric(out["pred_margin"], errors="coerce")
     wp = pd.to_numeric(out["pred_home_win_prob"], errors="coerce")
-    out["pick"] = np.where(margin >= 0, out["home_team"], out["away_team"])
-    out["pick_prob"] = np.where(out["pick"].eq(out["home_team"]), wp, 1.0 - wp)
+    out["pick"] = np.where(margin >= 0, out["home_team"].astype(str), out["away_team"].astype(str))
+    out["pick_prob"] = np.where(out["pick"].eq(out["home_team"].astype(str)), wp, 1.0 - wp)
     out["conf"] = wp.map(_win_conf)
     if "edge_vs_spread" in out.columns:
         edge = pd.to_numeric(out["edge_vs_spread"], errors="coerce")
     else:
         edge = pd.Series(np.nan, index=out.index)
     cover = pd.Series(pd.NA, index=out.index, dtype="object")
-    cover.loc[edge > 0.25] = out.loc[edge > 0.25, "home_team"]
-    cover.loc[edge < -0.25] = out.loc[edge < -0.25, "away_team"]
+    cover.loc[edge > 0.25] = out.loc[edge > 0.25, "home_team"].astype(str)
+    cover.loc[edge < -0.25] = out.loc[edge < -0.25, "away_team"].astype(str)
     out["cover_side"] = cover
+    home_pts = (
+        pd.to_numeric(out["pred_home_points"], errors="coerce")
+        if "pred_home_points" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    away_pts = (
+        pd.to_numeric(out["pred_away_points"], errors="coerce")
+        if "pred_away_points" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    pred_total = home_pts + away_pts
+    market_total = (
+        pd.to_numeric(out["over_under"], errors="coerce")
+        if "over_under" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    ou_edge = pred_total - market_total
+    ou = pd.Series(pd.NA, index=out.index, dtype="object")
+    ou.loc[ou_edge > 0.25] = "Over"
+    ou.loc[ou_edge < -0.25] = "Under"
+    out["ou_side"] = ou
+    # Row-wise join so a missing Over/Under lean cannot numpy-add str + float (HTTP 500).
+    out["market_picks"] = [
+        combine_market_picks(cover_side, ou_side) for cover_side, ou_side in zip(out["cover_side"], out["ou_side"])
+    ]
     return out
 
 

@@ -16,6 +16,8 @@ python -m cfb_model predict --year 2026 --week 5
 python -m pytest tests
 ```
 
+CFBD HTTP is train-only. The API/serve process must not set `CFBD_ALLOW_CALLS`. Collect/ingest/retrain jobs set `CFBD_ALLOW_CALLS=1`. Live board scores come from cfbschedule. See `docs/cfbd-quota.md`.
+
 API auth (do not hardcode keys):
 
 ```python

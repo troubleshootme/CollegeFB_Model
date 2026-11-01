@@ -57,6 +57,33 @@ QB_OUT_POINTS = 6.5
 QB_DYNAMIC_INJURY_BONUS = 0.45
 
 API_KEY_ENV = "CFBD_API_KEY"
+CFBD_ALLOW_CALLS_ENV = "CFBD_ALLOW_CALLS"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+class CfbdNotAllowed(RuntimeError):
+    """Serve-path code tried to call CFBD. Set CFBD_ALLOW_CALLS=1 only on train jobs."""
+
+
+class CfbdQuotaExhausted(RuntimeError):
+    """CFBD remainingCalls is 0; refuse further HTTP so the shared monthly pool is not hammered."""
+
+
+def cfbd_calls_allowed() -> bool:
+    return os.environ.get(CFBD_ALLOW_CALLS_ENV, "").strip().lower() in _TRUTHY
+
+
+def enable_cfbd_calls() -> None:
+    """Mark this process as a train/collect/ingest job. Never call from the API/serve path."""
+    os.environ[CFBD_ALLOW_CALLS_ENV] = "1"
+
+
+def require_cfbd_allowed() -> None:
+    if not cfbd_calls_allowed():
+        raise CfbdNotAllowed(
+            "CFBD HTTP is disabled outside collect/ingest/retrain. "
+            f"Set {CFBD_ALLOW_CALLS_ENV}=1 only for those jobs — never in the API process."
+        )
 
 
 def api_key() -> str | None:

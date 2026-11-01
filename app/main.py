@@ -32,8 +32,9 @@ from src.teams import load_team_directory as _load_team_directory
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     load_env()
+    # Local team cache only. Empty cache stays empty — never refresh from CFBD.
     try:
-        _load_team_directory(refresh_if_empty=True)
+        _load_team_directory(refresh_if_empty=False)
     except Exception:
         pass
     yield
@@ -77,7 +78,7 @@ def reset_state() -> None:
 
 
 def load_team_directory() -> dict[str, dict[str, Any]]:
-    return _load_team_directory(refresh_if_empty=True)
+    return _load_team_directory(refresh_if_empty=False)
 
 
 def _configured_api_key() -> str | None:
